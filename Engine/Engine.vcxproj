@@ -124,7 +124,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="FrameResource.h" />
     <ClInclude Include="Game.h" />
+    <ClInclude Include="LoadM3d.h" />
+    <ClInclude Include="LulludensApp.h" />
+    <ClInclude Include="ShadowMap.h" />
+    <ClInclude Include="SkinnedData.h" />
+    <ClInclude Include="Ssao.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="LoadM3d.cpp" />
+    <ClCompile Include="LulludensApp.cpp" />
+    <ClCompile Include="ShadowMap.cpp" />
+    <ClCompile Include="SkinnedData.cpp" />
+    <ClCompile Include="Ssao.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
