@@ -3,15 +3,28 @@
   "WorkspaceRootPath": "E:\\GameEngine\\LulludensEngine\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Engine\\LulludensApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Engine\\LulludensApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Engine\\StencilApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Engine\\StencilApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Engine\\LulludensApp.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
-      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Engine\\LulludensApp.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Common\\d3dUtil.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Common\\d3dUtil.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|E:\\GameEngine\\intro-to-dx12-master\\src\\Chapter 23 Character Animation\\SkinnedMesh\\SkinnedMeshApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Common\\d3dApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Common\\d3dApp.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Common\\UploadBuffer.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Common\\UploadBuffer.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Common\\DDSTextureLoader.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Common\\DDSTextureLoader.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|E:\\GameEngine\\LulludensEngine\\Engine\\FrameResource.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{32F4D96C-A5E2-4902-A0CE-699241600C6A}|Engine\\Engine.vcxproj|solutionrelative:Engine\\FrameResource.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
     }
   ],
   "DocumentGroupContainers": [
@@ -21,45 +34,84 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 2,
+          "SelectedChildIndex": 4,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "LulludensApp.h",
-              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Engine\\LulludensApp.h",
-              "RelativeDocumentMoniker": "Engine\\LulludensApp.h",
-              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Engine\\LulludensApp.h",
-              "RelativeToolTip": "Engine\\LulludensApp.h",
-              "ViewState": "AgIAAEsAAAAAAAAAAAAAAGQAAAAQAAAAAAAAAA==",
+              "DocumentIndex": 3,
+              "Title": "UploadBuffer.h",
+              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Common\\UploadBuffer.h",
+              "RelativeDocumentMoniker": "Common\\UploadBuffer.h",
+              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Common\\UploadBuffer.h",
+              "RelativeToolTip": "Common\\UploadBuffer.h",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABsAAAAPAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
-              "WhenOpened": "2025-10-16T13:09:47.651Z",
+              "WhenOpened": "2025-10-16T14:57:17.474Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "d3dUtil.cpp",
+              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Common\\d3dUtil.cpp",
+              "RelativeDocumentMoniker": "Common\\d3dUtil.cpp",
+              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Common\\d3dUtil.cpp",
+              "RelativeToolTip": "Common\\d3dUtil.cpp",
+              "ViewState": "AgIAAAQAAAAAAAAAAAAAAD0AAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-10-16T14:37:53.23Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "DDSTextureLoader.cpp",
+              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Common\\DDSTextureLoader.cpp",
+              "RelativeDocumentMoniker": "Common\\DDSTextureLoader.cpp",
+              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Common\\DDSTextureLoader.cpp",
+              "RelativeToolTip": "Common\\DDSTextureLoader.cpp",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2025-10-16T14:36:21.198Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "SkinnedMeshApp.cpp",
-              "DocumentMoniker": "E:\\GameEngine\\intro-to-dx12-master\\src\\Chapter 23 Character Animation\\SkinnedMesh\\SkinnedMeshApp.cpp",
-              "RelativeDocumentMoniker": "..\\intro-to-dx12-master\\src\\Chapter 23 Character Animation\\SkinnedMesh\\SkinnedMeshApp.cpp",
-              "ToolTip": "E:\\GameEngine\\intro-to-dx12-master\\src\\Chapter 23 Character Animation\\SkinnedMesh\\SkinnedMeshApp.cpp",
-              "RelativeToolTip": "..\\intro-to-dx12-master\\src\\Chapter 23 Character Animation\\SkinnedMesh\\SkinnedMeshApp.cpp",
-              "ViewState": "AgIAAGoHAAAAAAAAAAAAAKgHAAABAAAAAAAAAA==",
+              "Title": "d3dApp.cpp",
+              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Common\\d3dApp.cpp",
+              "RelativeDocumentMoniker": "Common\\d3dApp.cpp",
+              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Common\\d3dApp.cpp",
+              "RelativeToolTip": "Common\\d3dApp.cpp",
+              "ViewState": "AgIAAOIBAAAAAAAAAAAAACUCAAA6AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2025-10-16T13:09:34.675Z",
+              "WhenOpened": "2025-10-16T14:23:32.199Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "LulludensApp.cpp",
-              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Engine\\LulludensApp.cpp",
-              "RelativeDocumentMoniker": "Engine\\LulludensApp.cpp",
-              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Engine\\LulludensApp.cpp",
-              "RelativeToolTip": "Engine\\LulludensApp.cpp",
-              "ViewState": "AgIAABECAAAAAAAAAAAAAFcCAAAoAAAAAAAAAA==",
+              "Title": "StencilApp.cpp",
+              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Engine\\StencilApp.cpp",
+              "RelativeDocumentMoniker": "Engine\\StencilApp.cpp",
+              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Engine\\StencilApp.cpp",
+              "RelativeToolTip": "Engine\\StencilApp.cpp",
+              "ViewState": "AgIAAAwCAAAAAAAAAAAAAFQCAAAbAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
-              "WhenOpened": "2025-10-16T13:09:25.593Z",
+              "WhenOpened": "2025-10-16T14:21:46.338Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "FrameResource.h",
+              "DocumentMoniker": "E:\\GameEngine\\LulludensEngine\\Engine\\FrameResource.h",
+              "RelativeDocumentMoniker": "Engine\\FrameResource.h",
+              "ToolTip": "E:\\GameEngine\\LulludensEngine\\Engine\\FrameResource.h",
+              "RelativeToolTip": "Engine\\FrameResource.h",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAeAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2025-10-16T14:21:27.806Z",
               "EditorCaption": ""
             }
           ]
