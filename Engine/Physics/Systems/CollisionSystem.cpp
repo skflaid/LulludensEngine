@@ -1,4 +1,4 @@
-#include "CollisionSystem.h"
+ï»¿#include "CollisionSystem.h"
 #include "../Components/ColliderComponent.h"
 #include "../../Renderer/Components/TransformComponent.h"
 #include "../Components/RigidbodyComponent.h" 
@@ -10,10 +10,10 @@ void CollisionSystem::Initialize() {}
 void CollisionSystem::Shutdown() {}
 
 void CollisionSystem::RegisterEntity(Entity* entity) {
-    // ColliderComponentÀÌ°Å³ª ±× ÆÄ»ı Å¬·¡½º(BoxCollider µî)ÀÎ °æ¿ì
+    // ColliderComponentì´ê±°ë‚˜ ê·¸ íŒŒìƒ í´ë˜ìŠ¤(BoxCollider ë“±)ì¸ ê²½ìš°
     if (entity->HasComponent<ColliderComponent>() ||
         entity->HasComponent<BoxCollider>() ||
-        entity->HasComponent<SphereCollider>() /* ÇÊ¿ä½Ã Ãß°¡ */) {
+        entity->HasComponent<SphereCollider>() /* í•„ìš”ì‹œ ì¶”ê°€ */) {
         m_Entities.push_back(entity);
         char buf[128];
         sprintf_s(buf, "CollisionSystem::RegisterEntity: m_Entities.size()=%zu\n", m_Entities.size());
@@ -30,7 +30,7 @@ void CollisionSystem::Update(float deltaTime) {
 
     BroadPhaseDetection();
 
-    // µğ¹ö±× Ãâ·Â
+    // ë””ë²„ê·¸ ì¶œë ¥
     char buffer[256];
     sprintf_s(buffer, "CollisionSystem: Found %zu collision pairs\n", m_CollisionPairs.size());
     OutputDebugStringA(buffer);
@@ -40,7 +40,7 @@ void CollisionSystem::Update(float deltaTime) {
 }
 
 void CollisionSystem::BroadPhaseDetection() {
-    //µğ¹ö±×
+    //ë””ë²„ê·¸
     char buf[128];
     sprintf_s(buf, "BroadPhaseDetection: registered entities=%zu\n", m_Entities.size());
     OutputDebugStringA(buf);
@@ -66,7 +66,7 @@ bool CollisionSystem::CheckCollision(Entity* entityA, Entity* entityB) {
 
     if (!transA || !collA || !transB || !collB) return false;
 
-    // 3D AABB Ãæµ¹ °Ë»ç
+    // 3D AABB ì¶©ëŒ ê²€ì‚¬
     float a_min_x = transA->position.x - (collA->size.x * transA->scale.x) / 2.0f;
     float a_max_x = transA->position.x + (collA->size.x * transA->scale.x) / 2.0f;
     float a_min_y = transA->position.y - (collA->size.y * transA->scale.y) / 2.0f;
@@ -81,7 +81,7 @@ bool CollisionSystem::CheckCollision(Entity* entityA, Entity* entityB) {
     float b_min_z = transB->position.z - (collB->size.z * transB->scale.z) / 2.0f;
     float b_max_z = transB->position.z + (collB->size.z * transB->scale.z) / 2.0f;
 
-    // 3Ãà ¸ğµÎ¿¡¼­ °ãÄ§ÀÌ ÀÖ¾î¾ß Ãæµ¹
+    // 3ì¶• ëª¨ë‘ì—ì„œ ê²¹ì¹¨ì´ ìˆì–´ì•¼ ì¶©ëŒ
     bool collisionX = a_max_x >= b_min_x && a_min_x <= b_max_x;
     bool collisionY = a_max_y >= b_min_y && a_min_y <= b_max_y;
     bool collisionZ = a_max_z >= b_min_z && a_min_z <= b_max_z;
@@ -90,7 +90,132 @@ bool CollisionSystem::CheckCollision(Entity* entityA, Entity* entityB) {
 }
 
 void CollisionSystem::NarrowPhaseDetection() {
-    // More detailed collision info would be generated here
+    std::vector<CollisionPair> precisePairs;
+    precisePairs.reserve(m_CollisionPairs.size());
+
+    for (auto& pair : m_CollisionPairs)
+    {
+        std::vector<CollisionPair> precisePairs;
+        precisePairs.reserve(m_CollisionPairs.size());
+
+        for (auto& pair : m_CollisionPairs)
+        {
+            auto* transA = pair.entityA->GetComponent<TransformComponent>();
+            auto* transB = pair.entityB->GetComponent<TransformComponent>();
+            auto* collA = pair.entityA->GetComponent<BoxCollider>();
+            auto* collB = pair.entityB->GetComponent<BoxCollider>();
+
+            if (!transA || !transB || !collA || !collB)
+                continue;
+
+            // === ì¤‘ì‹¬ì  ===
+            XMVECTOR centerA = XMLoadFloat3(&transA->position);
+            XMVECTOR centerB = XMLoadFloat3(&transB->position);
+
+            // === íšŒì „í–‰ë ¬ ìƒì„± (ì¿¼í„°ë‹ˆì–¸ ì‚¬ìš©) ===
+            XMVECTOR quatA = XMQuaternionRotationRollPitchYaw(transA->rotation.x, transA->rotation.y, transA->rotation.z);
+            XMMATRIX rotA = XMMatrixRotationQuaternion(quatA);
+
+            XMVECTOR quatB = XMQuaternionRotationRollPitchYaw(transB->rotation.x, transB->rotation.y, transB->rotation.z);
+            XMMATRIX rotB = XMMatrixRotationQuaternion(quatB);
+            // === ê° ë¡œì»¬ ì¶• (OBBì˜ x, y, z ë°©í–¥) ===
+            XMVECTOR axisA[3] = {
+                XMVector3Normalize(rotA.r[0]), // X
+                XMVector3Normalize(rotA.r[1]), // Y
+                XMVector3Normalize(rotA.r[2])  // Z
+            };
+
+            XMVECTOR axisB[3] = {
+                XMVector3Normalize(rotB.r[0]),
+                XMVector3Normalize(rotB.r[1]),
+                XMVector3Normalize(rotB.r[2])
+            };
+
+            // === Half Extents (ë°˜í¬ê¸°) ===
+            XMFLOAT3 halfA(
+                (collA->size.x * transA->scale.x) * 0.5f,
+                (collA->size.y * transA->scale.y) * 0.5f,
+                (collA->size.z * transA->scale.z) * 0.5f
+            );
+
+            XMFLOAT3 halfB(
+                (collB->size.x * transB->scale.x) * 0.5f,
+                (collB->size.y * transB->scale.y) * 0.5f,
+                (collB->size.z * transB->scale.z) * 0.5f
+            );
+
+            // === ì¤‘ì‹¬ ê°„ ë²¡í„° ===
+            XMVECTOR T = XMVectorSubtract(centerB, centerA);
+
+            // === íšŒì „ í–‰ë ¬ R, ì ˆëŒ“ê°’ í–‰ë ¬ AbsR ===
+            float R[3][3], AbsR[3][3];
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    R[i][j] = XMVectorGetX(XMVector3Dot(axisA[i], axisB[j]));
+                    AbsR[i][j] = fabsf(R[i][j]) + 1e-6f; // ì•ˆì •ì„± ë³´ì •
+                }
+            }
+
+            // === Të¥¼ Aì˜ ë¡œì»¬ ê³µê°„ìœ¼ë¡œ ë³€í™˜ ===
+            XMFLOAT3 Tlocal(
+                XMVectorGetX(XMVector3Dot(T, axisA[0])),
+                XMVectorGetX(XMVector3Dot(T, axisA[1])),
+                XMVectorGetX(XMVector3Dot(T, axisA[2]))
+            );
+
+            bool separated = false;
+            float ra, rb;
+
+            // === Aì˜ ì¶• ê²€ì‚¬ (3ê°œ) ===
+            for (int i = 0; i < 3 && !separated; i++) {
+                ra = (&halfA.x)[i];
+                rb = halfB.x * AbsR[i][0] + halfB.y * AbsR[i][1] + halfB.z * AbsR[i][2];
+                if (fabs((&Tlocal.x)[i]) > ra + rb)
+                    separated = true;
+            }
+
+            // === Bì˜ ì¶• ê²€ì‚¬ (3ê°œ) ===
+            for (int j = 0; j < 3 && !separated; j++) {
+                ra = halfA.x * AbsR[0][j] + halfA.y * AbsR[1][j] + halfA.z * AbsR[2][j];
+                rb = (&halfB.x)[j];
+                float proj = fabs(Tlocal.x * R[0][j] + Tlocal.y * R[1][j] + Tlocal.z * R[2][j]);
+                if (proj > ra + rb)
+                    separated = true;
+            }
+
+            // === êµì°¨ì¶• (Aáµ¢ Ã— Bâ±¼) ê²€ì‚¬ (9ê°œ) ===
+            if (!separated) {
+                for (int i = 0; i < 3 && !separated; i++) {
+                    for (int j = 0; j < 3 && !separated; j++) {
+                        ra = halfA.y * AbsR[(i + 2) % 3][j] + halfA.z * AbsR[(i + 1) % 3][j];
+                        rb = halfB.y * AbsR[i][(j + 1) % 3] + halfB.z * AbsR[i][(j + 2) % 3];
+                        float tval = fabs(
+                            Tlocal.z * R[(i + 1) % 3][j] -
+                            Tlocal.y * R[(i + 2) % 3][j]
+                        );
+                        if (tval > ra + rb)
+                            separated = true;
+                    }
+                }
+            }
+
+            // === ì¶©ëŒ ì—¬ë¶€ ê²°ê³¼ ===
+            if (!separated)
+                precisePairs.push_back(pair);
+        }
+
+        // narrow phase ê²°ê³¼ë¥¼ ìµœì¢… ì¶©ëŒ ëª©ë¡ì— ë°˜ì˜
+        m_CollisionPairs = precisePairs;
+    }
+
+    m_CollisionPairs = precisePairs;
+
+    char buf[128];
+    sprintf_s(buf, "NarrowPhase: %zu precise collisions\n", m_CollisionPairs.size());
+    OutputDebugStringA(buf);
+    
 }
 
 void CollisionSystem::ResolveCollisions() {
@@ -106,7 +231,7 @@ void CollisionSystem::ResolveCollisions() {
 
         if (!transA || !transB || !collA || !collB) continue;
 
-        // Ãæµ¹ ±íÀÌ °è»ê
+        // ì¶©ëŒ ê¹Šì´ ê³„ì‚°
         float a_half_x = (collA->size.x * transA->scale.x) / 2.0f;
         float a_half_y = (collA->size.y * transA->scale.y) / 2.0f;
         float a_half_z = (collA->size.z * transA->scale.z) / 2.0f;
@@ -123,9 +248,9 @@ void CollisionSystem::ResolveCollisions() {
         float overlap_y = (a_half_y + b_half_y) - abs(dy);
         float overlap_z = (a_half_z + b_half_z) - abs(dz);
 
-        // °¡Àå ÀÛÀº °ãÄ§À» Ã£¾Æ¼­ ±× ÃàÀ¸·Î ¹Ğ¾î³¿
+        // ê°€ì¥ ì‘ì€ ê²¹ì¹¨ì„ ì°¾ì•„ì„œ ê·¸ ì¶•ìœ¼ë¡œ ë°€ì–´ëƒ„
         if (overlap_x < overlap_y && overlap_x < overlap_z) {
-            // XÃàÀ¸·Î ºĞ¸®
+            // Xì¶•ìœ¼ë¡œ ë¶„ë¦¬
             float direction = (dx > 0) ? 1.0f : -1.0f;
             if (rbA && !rbA->isKinematic) {
                 transA->position.x += direction * overlap_x * 0.5f;
@@ -137,7 +262,7 @@ void CollisionSystem::ResolveCollisions() {
             }
         }
         else if (overlap_y < overlap_z) {
-            // YÃàÀ¸·Î ºĞ¸® (°¡Àå ÈçÇÑ °æ¿ì: ¹Ù´Ú Ãæµ¹)
+            // Yì¶•ìœ¼ë¡œ ë¶„ë¦¬ (ê°€ì¥ í”í•œ ê²½ìš°: ë°”ë‹¥ ì¶©ëŒ)
             float direction = (dy > 0) ? 1.0f : -1.0f;
             if (rbA && !rbA->isKinematic) {
                 transA->position.y += direction * overlap_y * 0.5f;
@@ -149,7 +274,7 @@ void CollisionSystem::ResolveCollisions() {
             }
         }
         else {
-            // ZÃàÀ¸·Î ºĞ¸®
+            // Zì¶•ìœ¼ë¡œ ë¶„ë¦¬
             float direction = (dz > 0) ? 1.0f : -1.0f;
             if (rbA && !rbA->isKinematic) {
                 transA->position.z += direction * overlap_z * 0.5f;
