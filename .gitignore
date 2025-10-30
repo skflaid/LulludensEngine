@@ -80,3 +80,5 @@ x86/
 
 # JSON 설정 파일
 DocumentLayout.json
+/PrimalEditor/obj
+/Engine/x64
