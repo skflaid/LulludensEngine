@@ -102,6 +102,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(ProjectDir)Renderer;$(ProjectDir)Physics;$(ProjectDir);$(ProjectDir)Core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -124,27 +125,36 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Common\Camera.h" />
-    <ClInclude Include="..\Common\d3dApp.h" />
-    <ClInclude Include="..\Common\d3dUtil.h" />
-    <ClInclude Include="..\Common\d3dx12.h" />
-    <ClInclude Include="..\Common\DDSTextureLoader.h" />
-    <ClInclude Include="..\Common\GameTimer.h" />
-    <ClInclude Include="..\Common\GeometryGenerator.h" />
-    <ClInclude Include="..\Common\MathHelper.h" />
-    <ClInclude Include="..\Common\UploadBuffer.h" />
-    <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="Physics\Components\ColliderComponent.h" />
+    <ClInclude Include="Physics\Systems\CollisionSystem.h" />
+    <ClInclude Include="Core\Entity.h" />
+    <ClInclude Include="Core\IComponent.h" />
+    <ClInclude Include="Core\ISystem.h" />
+    <ClInclude Include="Physics\Systems\DynamicsSystem.h" />
+    <ClInclude Include="Game.h" />
+    <ClInclude Include="Physics\PhysicsScheduler.h" />
+    <ClInclude Include="Physics\PhysicsWorld.h" />
+    <ClInclude Include="Renderer\Components\MaterialComponent.h" />
+    <ClInclude Include="Renderer\Components\MeshComponent.h" />
+    <ClInclude Include="Renderer\Components\TransformComponent.h" />
+    <ClInclude Include="Renderer\RendererCore.h" />
+    <ClInclude Include="Renderer\Systems\RenderSystem.h" />
+    <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
+    <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Common\Camera.cpp" />
-    <ClCompile Include="..\Common\d3dApp.cpp" />
-    <ClCompile Include="..\Common\d3dUtil.cpp" />
-    <ClCompile Include="..\Common\DDSTextureLoader.cpp" />
-    <ClCompile Include="..\Common\GameTimer.cpp" />
-    <ClCompile Include="..\Common\GeometryGenerator.cpp" />
-    <ClCompile Include="..\Common\MathHelper.cpp" />
-    <ClCompile Include="FrameResource.cpp" />
-    <ClCompile Include="StencilApp.cpp" />
+    <ClCompile Include="App\MainApp.cpp" />
+    <ClCompile Include="Physics\PhysicsScheduler.cpp" />
+    <ClCompile Include="Physics\PhysicsWorld.cpp" />
+    <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
+    <ClCompile Include="Physics\Systems\DynamicsSystem.cpp" />
+    <ClCompile Include="Renderer\Components\MeshComponent.cpp" />
+    <ClCompile Include="Renderer\RendererCore.cpp" />
+    <ClCompile Include="Renderer\Systems\RenderSystem.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Models\car.txt" />
+    <Text Include="Models\skull.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

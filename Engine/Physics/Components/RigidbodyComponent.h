@@ -1,5 +1,5 @@
 #pragma once
-#include "IComponent.h"
+#include "Core/IComponent.h"
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -25,6 +25,12 @@ struct RigidbodyComponent : public IComponent {
         XMVECTOR f = XMLoadFloat3(&forceAccumulator);
         XMVECTOR newForce = XMLoadFloat3(&force);
         XMStoreFloat3(&forceAccumulator, XMVectorAdd(f, newForce));
+    }
+
+    void AddTorque(const XMFLOAT3& torque) {
+        XMVECTOR t = XMLoadFloat3(&torqueAccumulator);
+        XMVECTOR newTorque = XMLoadFloat3(&torque);
+        XMStoreFloat3(&torqueAccumulator, XMVectorAdd(t, newTorque));
     }
 
     void ClearForces() {

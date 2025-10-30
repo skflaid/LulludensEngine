@@ -1,8 +1,4 @@
 #pragma once
-#include <vector>
-#include <memory>
-
-class Entity;
 
 class ISystem {
 public:
@@ -13,5 +9,10 @@ public:
     virtual void Shutdown() = 0;
 
     virtual const char* GetName() const = 0;
+
+    bool IsEnabled() const { return m_Enabled; }
+    void SetEnabled(bool enabled) { m_Enabled = enabled; }
+
+protected:
+    bool m_Enabled = true;
 };
-#pragma once

@@ -1,9 +1,8 @@
-E:\GameEngine\LulludensEngine\Common\Camera.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\Camera.obj
-E:\GameEngine\LulludensEngine\Common\d3dApp.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\d3dApp.obj
-E:\GameEngine\LulludensEngine\Common\d3dUtil.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\d3dUtil.obj
-E:\GameEngine\LulludensEngine\Common\DDSTextureLoader.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\DDSTextureLoader.obj
-E:\GameEngine\LulludensEngine\Common\GameTimer.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\GameTimer.obj
-E:\GameEngine\LulludensEngine\Common\GeometryGenerator.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\GeometryGenerator.obj
-E:\GameEngine\LulludensEngine\Common\MathHelper.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\MathHelper.obj
-E:\GameEngine\LulludensEngine\Engine\FrameResource.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\FrameResource.obj
-E:\GameEngine\LulludensEngine\Engine\StencilApp.cpp;E:\GameEngine\LulludensEngine\Engine\x64\Debug\StencilApp.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\App\MainApp.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\MainApp.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\PhysicsScheduler.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\PhysicsScheduler.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\PhysicsWorld.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\PhysicsWorld.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\Systems\CollisionSystem.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\CollisionSystem.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\Systems\DynamicsSystem.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\DynamicsSystem.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Renderer\Components\MeshComponent.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\MeshComponent.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Renderer\RendererCore.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\RendererCore.obj
+C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Renderer\Systems\RenderSystem.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\RenderSystem.obj

@@ -18,64 +18,83 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Common\Camera.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Renderer\Components\MaterialComponent.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\d3dApp.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Core\Entity.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\d3dUtil.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Core\IComponent.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\d3dx12.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Core\ISystem.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\DDSTextureLoader.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Renderer\Components\TransformComponent.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\GameTimer.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Physics\Components\ColliderComponent.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\GeometryGenerator.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Physics\Systems\CollisionSystem.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\MathHelper.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Physics\Systems\DynamicsSystem.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\Common\UploadBuffer.h">
-      <Filter>Common</Filter>
+    <ClInclude Include="Game.h">
+      <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="FrameResource.h">
+    <ClInclude Include="Physics\PhysicsScheduler.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\PhysicsWorld.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\Components\RigidbodyComponent.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\Components\SoftBodyComponent.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\MeshComponent.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RendererCore.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\RenderSystem.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Common\Camera.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\d3dApp.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\d3dUtil.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\GameTimer.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\GeometryGenerator.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\MathHelper.cpp">
-      <Filter>Common</Filter>
-    </ClCompile>
-    <ClCompile Include="FrameResource.cpp">
+    <ClCompile Include="Renderer\RendererCore.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="StencilApp.cpp">
+    <ClCompile Include="App\MainApp.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="Renderer\Systems\RenderSystem.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\Systems\DynamicsSystem.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\Systems\CollisionSystem.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\PhysicsScheduler.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\PhysicsWorld.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Components\MeshComponent.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Models\car.txt" />
+    <Text Include="Models\skull.txt" />
   </ItemGroup>
 </Project>

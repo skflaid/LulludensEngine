@@ -1,5 +1,5 @@
 #pragma once
-#include "IComponent.h"
+#include "Core/IComponent.h"
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -7,8 +7,7 @@ using namespace DirectX;
 enum class ColliderType {
     Box,
     Sphere,
-    Capsule,
-    Mesh
+    Capsule
 };
 
 struct ColliderComponent : public IComponent {
