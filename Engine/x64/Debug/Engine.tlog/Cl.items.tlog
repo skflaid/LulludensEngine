@@ -1,8 +1,0 @@
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\App\MainApp.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\MainApp.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\PhysicsScheduler.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\PhysicsScheduler.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\PhysicsWorld.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\PhysicsWorld.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\Systems\CollisionSystem.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\CollisionSystem.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Physics\Systems\DynamicsSystem.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\DynamicsSystem.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Renderer\Components\MeshComponent.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\MeshComponent.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Renderer\RendererCore.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\RendererCore.obj
-C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\Renderer\Systems\RenderSystem.cpp;C:\Users\insue\Documents\GitHub\LulludensEngine - 복사본\Engine\x64\Debug\RenderSystem.obj
