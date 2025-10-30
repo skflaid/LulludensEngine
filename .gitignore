@@ -30,3 +30,53 @@
 *.exe
 *.out
 *.app
+
+# ===================================
+# Visual Studio 추가 항목
+# ===================================
+
+# Visual Studio 인덱스 및 캐시
+*.vsidx
+.vs/
+
+# Visual Studio IntelliSense 데이터베이스
+*.VC.db
+*.VC.db-shm
+*.VC.db-wal
+*.VC.opendb
+
+# Visual Studio 사용자 설정
+*.suo
+*.user
+
+# 디버그 정보 파일
+*.pdb
+*.ilk
+*.idb
+
+# 로그 파일
+*.log
+*.tlog
+CL.command.*.log
+CL.read.*.log
+CL.write.*.log
+link.command.*.log
+link.read.*.log
+link.write.*.log
+
+# 빌드 관련
+*.recipe
+Engine.lastbuildstate
+
+# IntelliSense 캐시
+*.ipch
+ipch/
+
+# 빌드 출력 폴더
+Debug/
+Release/
+x64/
+x86/
+
+# JSON 설정 파일
+DocumentLayout.json
