@@ -146,6 +146,6 @@
     <Text Include="Models\skull.txt" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Renderer\Shaders\Basic.hlsl" />
+    <None Include="Renderer\Shaders\default.hlsli" />
   </ItemGroup>
 </Project>
