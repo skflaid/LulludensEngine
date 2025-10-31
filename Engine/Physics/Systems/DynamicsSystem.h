@@ -23,6 +23,8 @@ private:
     void IntegrateVelocity(Entity* entity, float deltaTime);
     void IntegratePosition(Entity* entity, float deltaTime);
 
+    void ApplySlopeForce(Entity* entity, const XMFLOAT3& contactNormal);
+
 private:
     PhysicsWorld* m_PhysicsWorld;
     std::vector<Entity*> m_Entities;

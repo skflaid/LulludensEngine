@@ -23,11 +23,22 @@ public:
     void UnregisterEntity(Entity* entity);
 
 private:
+    struct CollisionPair {
+        Entity* entityA;
+        Entity* entityB;
+    };
+
     void BroadPhaseDetection();
+    bool CheckAABBCollision(Entity* entityA, Entity* entityB);
     void NarrowPhaseDetection();
     void ResolveCollisions();
 
-    bool CheckCollision(Entity* entityA, Entity* entityB);
+    // === 충돌 타입별 검사 함수 선언 ===
+    bool TestBoxBox(Entity* entityA, Entity* entityB);
+    bool TestSphereSphere(Entity* entityA, Entity* entityB);
+    bool TestBoxSphere(Entity* boxEntity, Entity* sphereEntity);
+
+    bool m_Enabled = true;
 
 private:
     PhysicsWorld* m_PhysicsWorld;

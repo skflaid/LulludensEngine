@@ -64,7 +64,7 @@ public:
 
 private:
     void CreateEntities() {
-        /*
+        
         // Create a cube entity with physics and rendering
         auto cubeEntity = std::make_unique<Entity>(1);
 
@@ -93,32 +93,33 @@ private:
         m_RenderSystem->RegisterEntity(cubeEntity.get());
 
         m_Entities.push_back(std::move(cubeEntity));
-        */
+        
 
-        auto skullEntity = std::make_unique<Entity>(3);
+        //auto skullEntity = std::make_unique<Entity>(3);
 
-        auto transform = skullEntity->AddComponent<TransformComponent>();
-        transform->SetPosition(0, 2, 0);
-        transform->SetScale(0.1f, 0.1f, 0.1f);
-        transform->SetRotation(0, 30.0f, 30.0f);
+        //auto transform = skullEntity->AddComponent<TransformComponent>();
+        //transform->SetPosition(0, 2, 0);
+        //transform->SetScale(0.1f, 0.1f, 0.1f);
+        //transform->SetRotation(0, 0.0f, 0.0f);
 
-        auto rigidbody = skullEntity->AddComponent<RigidbodyComponent>();
-        rigidbody->mass = 1.0f;
-        rigidbody->useGravity = true;
+        //auto rigidbody = skullEntity->AddComponent<RigidbodyComponent>();
+        //rigidbody->mass = 1.0f;
+        //rigidbody->useGravity = true;
+        //rigidbody->friction = 1.0f;
 
-        auto collider = skullEntity->AddComponent<BoxCollider>();
-        collider->size = { 3.0f,3.0f, 3.0f };
+        //auto collider = skullEntity->AddComponent<BoxCollider>();
+        //collider->size = { 3.0f,3.0f, 3.0f };
 
-        auto mesh = skullEntity->AddComponent<MeshComponent>();
-        mesh->LoadFromFile("Models/skull.txt");
+        //auto mesh = skullEntity->AddComponent<MeshComponent>();
+        //mesh->LoadFromFile("Models/skull.txt");
 
-        auto material = skullEntity->AddComponent<MaterialComponent>();
-        material->SetAlbedo(1.0f, 1.0f, 1.0f);
+        //auto material = skullEntity->AddComponent<MaterialComponent>();
+        //material->SetAlbedo(1.0f, 1.0f, 1.0f);
 
-        m_PhysicsWorld->RegisterEntity(skullEntity.get());
-        m_RenderSystem->RegisterEntity(skullEntity.get());
+        //m_PhysicsWorld->RegisterEntity(skullEntity.get());
+        //m_RenderSystem->RegisterEntity(skullEntity.get());
 
-        m_Entities.push_back(std::move(skullEntity));
+        //m_Entities.push_back(std::move(skullEntity));
 
         // Create ground plane
         auto groundEntity = std::make_unique<Entity>(2);
@@ -126,7 +127,7 @@ private:
         auto groundTransform = groundEntity->AddComponent<TransformComponent>();
         groundTransform->SetPosition(0.0f, 0.0f, 0.0f);
         groundTransform->SetScale(10.0f, 0.1f, 10.0f);
-        groundTransform->SetRotation(0.0f, 0.0f, 0.0f);
+        groundTransform->SetRotation(0.0f, 0.0f, 10.0f);
 
         // Rigidbody 추가하되, Kinematic으로 설정하여 고정
         auto groundRb = groundEntity->AddComponent<RigidbodyComponent>();
@@ -134,7 +135,7 @@ private:
         groundRb->useGravity = false;
 
         auto groundCollider = groundEntity->AddComponent<BoxCollider>();
-        groundCollider->size = { 10.0f, 0.1f, 10.0f };
+        groundCollider->size = { 1.0f, 1.0f, 1.0f };
 
         auto groundMesh = groundEntity->AddComponent<MeshComponent>();
         groundMesh->CreateCube();

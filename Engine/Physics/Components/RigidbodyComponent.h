@@ -7,15 +7,19 @@ using namespace DirectX;
 struct RigidbodyComponent : public IComponent {
     COMPONENT_TYPE(RigidbodyComponent)
 
-        XMFLOAT3 velocity = { 0.0f, 0.0f, 0.0f };
+    XMFLOAT3 velocity = { 0.0f, 0.0f, 0.0f };
     XMFLOAT3 acceleration = { 0.0f, 0.0f, 0.0f };
     XMFLOAT3 angularVelocity = { 0.0f, 0.0f, 0.0f };
 
     float mass = 1.0f;
-    float drag = 0.0f;
     float angularDrag = 0.05f;
     bool useGravity = true;
     bool isKinematic = false;
+
+    float restitution = 0.3f;  // 반발 계수 (0~1)
+    float friction = 0.5f;     // 마찰 계수 (0~1)
+    float drag = 0.01f;        // 공기 저항
+    float linearDamping = 0.05f;
 
     // Force accumulation
     XMFLOAT3 forceAccumulator = { 0.0f, 0.0f, 0.0f };
