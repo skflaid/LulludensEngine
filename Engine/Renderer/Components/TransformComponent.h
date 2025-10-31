@@ -30,4 +30,8 @@ struct TransformComponent : public IComponent {
     void SetScale(float x, float y, float z) {
         scale = { x, y, z };
     }
+
+    XMFLOAT3 GetPosition() const { return position; }
+    XMFLOAT3 GetRotation() const { return rotation; }
+    XMFLOAT3 GetScale() const { return scale; }
 };
