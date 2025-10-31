@@ -96,6 +96,9 @@
     <ClInclude Include="App\GameEngine.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="App\EntityInspector.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Renderer\RendererCore.cpp">
@@ -144,6 +147,9 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="App\GameEngine.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="App\EntityInspector.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

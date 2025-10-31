@@ -1,9 +1,11 @@
 #include <Windows.h>
 #include <cstdint>
 #include "GameEngine.h"
+#include "EntityInspector.h"
 
 // 기존 전역변수 유지 (다른 모듈에서 참조할 수 있으므로 이름 그대로)
 GameEngine g_Engine;
+EntityInspector g_Inspector;
 HWND g_Hwnd = nullptr;
 bool g_Running = true;
 
@@ -51,6 +53,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     if (!g_Hwnd) return -1;
 
     ShowWindow(g_Hwnd, nCmdShow);
+    g_Inspector.Create(g_Hwnd, hInstance);
+    g_Inspector.Show(SW_SHOW);
 
     if (!g_Engine.Initialize(g_Hwnd, WINDOW_WIDTH, WINDOW_HEIGHT))
         return -1;
@@ -75,6 +79,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 
         g_Engine.Update(dt);
         g_Engine.Render();
+
+        g_Inspector.Update(&g_Engine);
     }
 
     g_Engine.Shutdown();

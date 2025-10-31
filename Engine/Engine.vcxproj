@@ -134,6 +134,7 @@
     <ClInclude Include="..\Common\GeometryGenerator.h" />
     <ClInclude Include="..\Common\MathHelper.h" />
     <ClInclude Include="..\Common\UploadBuffer.h" />
+    <ClInclude Include="App\EntityInspector.h" />
     <ClInclude Include="App\GameEngine.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
     <ClInclude Include="Physics\Systems\CollisionSystem.h" />
@@ -160,6 +161,7 @@
     <ClCompile Include="..\Common\GameTimer.cpp" />
     <ClCompile Include="..\Common\GeometryGenerator.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
+    <ClCompile Include="App\EntityInspector.cpp" />
     <ClCompile Include="App\GameEngine.cpp" />
     <ClCompile Include="App\MainApp.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
