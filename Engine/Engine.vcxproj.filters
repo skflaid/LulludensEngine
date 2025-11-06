@@ -172,4 +172,7 @@
   <ItemGroup>
     <None Include="Renderer\Shaders\default.hlsl" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Renderer\Shaders\LightingUtil.hlsl" />
+  </ItemGroup>
 </Project>

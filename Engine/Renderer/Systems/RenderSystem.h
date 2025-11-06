@@ -3,6 +3,7 @@
 #include "Core/ISystem.h"
 #include "Core/Entity.h"
 #include "Renderer/RendererCore.h"
+#include "RenderConstants.h"  // 추가
 #include <vector>
 #include <memory>
 #include <DirectXMath.h>
@@ -26,7 +27,8 @@ public:
     void Render();
 
 private:
-    void RenderEntity(Entity* entity);
+    void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
+    void UpdatePassConstants(UINT frameIndex);
     void CreatePipelineState();
     void CreateConstantBuffer();
 
@@ -44,17 +46,26 @@ private:
     // Camera matrices
     XMFLOAT4X4 m_ViewMatrix;
     XMFLOAT4X4 m_ProjMatrix;
+    
+    // Lighting
+    XMFLOAT4 m_AmbientLight = { 0.6f, 0.6f, 0.6f, 1.0f };
+    float m_TotalTime = 0.0f;
 
-    // Constant buffer for per-object data
+    // Constant buffers
     static const int FrameCount = 2;
-    ComPtr<ID3D12Resource> m_ConstantBuffers[FrameCount];
-    UINT8* m_ConstantBufferDataBegin[FrameCount];
-    UINT m_ConstantBufferSize;
-
-    struct SceneConstants {
-        XMFLOAT4X4 world;
-        XMFLOAT4X4 view;
-        XMFLOAT4X4 proj;
-        XMFLOAT4 color;
-    };
+    
+    // Per-object constant buffer (b0)
+    ComPtr<ID3D12Resource> m_ObjectConstantBuffers[FrameCount];
+    UINT8* m_ObjectConstantBufferDataBegin[FrameCount];
+    UINT m_ObjectConstantBufferSize;
+    
+    // Material constant buffer (b1)
+    ComPtr<ID3D12Resource> m_MaterialConstantBuffers[FrameCount];
+    UINT8* m_MaterialConstantBufferDataBegin[FrameCount];
+    UINT m_MaterialConstantBufferSize;
+    
+    // Pass constant buffer (b2)
+    ComPtr<ID3D12Resource> m_PassConstantBuffers[FrameCount];
+    UINT8* m_PassConstantBufferDataBegin[FrameCount];
+    UINT m_PassConstantBufferSize;
 };

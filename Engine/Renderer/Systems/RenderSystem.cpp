@@ -9,9 +9,12 @@
 #pragma comment(lib, "d3dcompiler.lib")
 
 RenderSystem::RenderSystem(HWND hwnd, uint32_t width, uint32_t height)
-    : m_Hwnd(hwnd), m_Width(width), m_Height(height), m_ConstantBufferSize(0) {
+    : m_Hwnd(hwnd), m_Width(width), m_Height(height), 
+      m_ObjectConstantBufferSize(0), m_MaterialConstantBufferSize(0), m_PassConstantBufferSize(0) {
     for (int i = 0; i < FrameCount; ++i) {
-        m_ConstantBufferDataBegin[i] = nullptr;
+        m_ObjectConstantBufferDataBegin[i] = nullptr;
+        m_MaterialConstantBufferDataBegin[i] = nullptr;
+        m_PassConstantBufferDataBegin[i] = nullptr;
     }
 }
 
@@ -25,14 +28,14 @@ void RenderSystem::Initialize() {
         return;
     }
 
-    // Ä«¸Ş¶ó(ºä) Çà·Ä ¼³Á¤
-    XMVECTOR eye = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);  // Ä«¸Ş¶ó À§Ä¡
-    XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);    // ¹Ù¶óº¸´Â ÁöÁ¡
-    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // »óÇâ º¤ÅÍ
+    // ì¹´ë©”ë¼(ë·°) í–‰ë ¬ ì„¤ì •
+    XMVECTOR eye = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);  // ì¹´ë©”ë¼ ìœ„ì¹˜
+    XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);    // ë°”ë¼ë³´ëŠ” ì§€ì 
+    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // ìƒí–¥ ë²¡í„°
     XMStoreFloat4x4(&m_ViewMatrix, XMMatrixLookAtLH(eye, at, up));
 
-    // ¿ø±Ù Åõ¿µ Çà·Ä ¼³Á¤
-    float fov = XM_PIDIV4; // 45µµ
+    // ì›ê·¼ íˆ¬ì˜ í–‰ë ¬ ì„¤ì •
+    float fov = XM_PIDIV4; // 45ë„
     float aspectRatio = static_cast<float>(m_Width) / static_cast<float>(m_Height);
     XMStoreFloat4x4(&m_ProjMatrix, XMMatrixPerspectiveFovLH(fov, aspectRatio, 0.1f, 100.0f));
 
@@ -43,17 +46,20 @@ void RenderSystem::Initialize() {
 void RenderSystem::CreateConstantBuffer() {
     auto device = m_RendererCore->GetDevice();
 
-    // »ó¼ö ¹öÆÛ´Â 256¹ÙÀÌÆ® ¹è¼ö·Î Á¤·ÄµÇ¾î¾ß ÇÔ
-    m_ConstantBufferSize = (sizeof(SceneConstants) + 255) & ~255;
+    // ìƒìˆ˜ ë²„í¼ëŠ” 256ë°”ì´íŠ¸ ë°°ìˆ˜ë¡œ ì •ë ¬ë˜ì–´ì•¼ í•¨
+    m_ObjectConstantBufferSize = (sizeof(ObjectConstants) + 255) & ~255;
+    m_MaterialConstantBufferSize = (sizeof(RenderMaterialConstants) + 255) & ~255;
+    m_PassConstantBufferSize = (sizeof(PassConstants) + 255) & ~255;
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
     heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
     heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
+    // Object constant buffer (b0) - 100ê°œ ì˜¤ë¸Œì íŠ¸ê¹Œì§€ ì§€ì›
     D3D12_RESOURCE_DESC resourceDesc = {};
     resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    resourceDesc.Width = m_ConstantBufferSize * 100; // 100°³ ¿ÀºêÁ§Æ®±îÁö Áö¿ø
+    resourceDesc.Width = m_ObjectConstantBufferSize * 100;
     resourceDesc.Height = 1;
     resourceDesc.DepthOrArraySize = 1;
     resourceDesc.MipLevels = 1;
@@ -62,89 +68,160 @@ void RenderSystem::CreateConstantBuffer() {
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
     for (int i = 0; i < FrameCount; ++i) {
+        // Object constant buffers
         device->CreateCommittedResource(
             &heapProps,
             D3D12_HEAP_FLAG_NONE,
             &resourceDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
             nullptr,
-            IID_PPV_ARGS(&m_ConstantBuffers[i])
+            IID_PPV_ARGS(&m_ObjectConstantBuffers[i])
         );
+        D3D12_RANGE readRange = { 0, 0 };
+        m_ObjectConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_ObjectConstantBufferDataBegin[i]));
 
-        D3D12_RANGE readRange = { 0, 0 }; // CPU¿¡¼­ ÀĞÁö ¾ÊÀ½
-        m_ConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_ConstantBufferDataBegin[i]));
+        // Material constant buffers (b1) - 100ê°œ ë¨¸í‹°ë¦¬ì–¼ê¹Œì§€ ì§€ì›
+        resourceDesc.Width = m_MaterialConstantBufferSize * 100;
+        device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&m_MaterialConstantBuffers[i])
+        );
+        m_MaterialConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_MaterialConstantBufferDataBegin[i]));
+
+        // Pass constant buffer (b2) - í”„ë ˆì„ë‹¹ 1ê°œ
+        resourceDesc.Width = m_PassConstantBufferSize;
+        device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&m_PassConstantBuffers[i])
+        );
+        m_PassConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_PassConstantBufferDataBegin[i]));
     }
 }
 
 void RenderSystem::CreatePipelineState() {
     auto device = m_RendererCore->GetDevice();
 
-    // ·çÆ® ½Ã±×´ÏÃ³ »ı¼º
-    D3D12_ROOT_PARAMETER rootParameters[2];
-
-    // »ó¼ö ¹öÆÛ ºä (b0)
+    // 1) Root Signature (CBV b0, b1, b2)
+    D3D12_ROOT_PARAMETER rootParameters[3] = {};
+    
+    // b0: Per-object constants
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    rootParameters[0].Descriptor.ShaderRegister = 0;
+    rootParameters[0].Descriptor.ShaderRegister = 0; // b0
     rootParameters[0].Descriptor.RegisterSpace = 0;
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    
+    // b1: Material constants
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[1].Descriptor.ShaderRegister = 1; // b1
+    rootParameters[1].Descriptor.RegisterSpace = 0;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    
+    // b2: Pass constants
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[2].Descriptor.ShaderRegister = 2; // b2
+    rootParameters[2].Descriptor.RegisterSpace = 0;
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-    // µÎ ¹øÂ° ·çÆ® ÆÄ¶ó¹ÌÅÍ´Â »ç¿ë ¾È ÇÔ (»ö»óÀ» »ó¼ö ¹öÆÛ¿¡ Æ÷ÇÔ½ÃÅ´)
+    D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+    rootDesc.NumParameters = 3;
+    rootDesc.pParameters = rootParameters;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
-    rootSignatureDesc.NumParameters = 1; // ÇÏ³ª¸¸ »ç¿ë
-    rootSignatureDesc.pParameters = rootParameters;
-    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-    ComPtr<ID3DBlob> signature;
-    ComPtr<ID3DBlob> error;
-    D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
-    device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature));
+    ComPtr<ID3DBlob> sig, err;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&m_RootSignature)));
 
     const std::wstring gbufferPath = L"Renderer/Shaders/default.hlsl";
 
-    ComPtr<ID3DBlob> vertexShader;
-    ComPtr<ID3DBlob> pixelShader;
-    vertexShader = d3dUtil::CompileShader(gbufferPath, nullptr, "VSMain", "vs_5_0");
-    pixelShader = d3dUtil::CompileShader(gbufferPath, nullptr, "PSMain", "ps_5_0");
+    ComPtr<ID3DBlob> vs, ps;
+    vs = d3dUtil::CompileShader(gbufferPath, nullptr, "VS", "vs_5_0");
+    ps = d3dUtil::CompileShader(gbufferPath, nullptr, "PS", "ps_5_0");
 
-    // Input Layout
-    D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+    // 3) Input Layout (POSITION, NORMAL, TEXCOORD)
+    D3D12_INPUT_ELEMENT_DESC inputElements[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
-    // PSO »ı¼º
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-    psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-    psoDesc.pRootSignature = m_RootSignature.Get();
-    psoDesc.VS = { vertexShader->GetBufferPointer(), vertexShader->GetBufferSize() };
-    psoDesc.PS = { pixelShader->GetBufferPointer(), pixelShader->GetBufferSize() };
-    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-    psoDesc.DepthStencilState.DepthEnable = TRUE;
-    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    psoDesc.SampleDesc.Count = 1;
+    // 4) ì•ˆì „í•œ ê¸°ë³¸ê°’ìœ¼ë¡œ "ì™„ì „íˆ" ì±„ìš°ê¸°
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+    auto& rt0 = blendDesc.RenderTarget[0];
+    rt0.BlendEnable = FALSE;
+    rt0.LogicOpEnable = FALSE;
+    rt0.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-    device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PipelineState));
+    D3D12_RASTERIZER_DESC rastDesc = {};
+    rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
+    rastDesc.CullMode = D3D12_CULL_MODE_BACK;
+    rastDesc.FrontCounterClockwise = FALSE;
+    rastDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+    rastDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+    rastDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+    rastDesc.DepthClipEnable = TRUE;
+    rastDesc.MultisampleEnable = FALSE;
+    rastDesc.AntialiasedLineEnable = FALSE;
+    rastDesc.ForcedSampleCount = 0;
+    rastDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+    D3D12_DEPTH_STENCIL_DESC dsDesc = {};
+    dsDesc.DepthEnable = TRUE;
+    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    dsDesc.StencilEnable = FALSE;
+    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    dsDesc.BackFace = dsDesc.FrontFace;
+
+    // 5) PSO
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    pso.InputLayout = { inputElements, _countof(inputElements) };
+    pso.pRootSignature = m_RootSignature.Get();
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.RasterizerState = rastDesc;
+    pso.BlendState = blendDesc;
+    pso.DepthStencilState = dsDesc;
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    pso.SampleDesc.Count = 1;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_PipelineState)));
 }
 
 void RenderSystem::Update(float deltaTime) {
-    // ·»´õ¸µ ½Ã½ºÅÛÀº Update¿¡¼­ Æ¯º°ÇÑ ÀÛ¾÷À» ÇÏÁö ¾ÊÀ½
+    m_TotalTime += deltaTime;
 }
 
 void RenderSystem::Shutdown() {
     for (int i = 0; i < FrameCount; ++i) {
-        if (m_ConstantBuffers[i]) {
-            m_ConstantBuffers[i]->Unmap(0, nullptr);
-            m_ConstantBufferDataBegin[i] = nullptr;
+        if (m_ObjectConstantBuffers[i]) {
+            m_ObjectConstantBuffers[i]->Unmap(0, nullptr);
+            m_ObjectConstantBufferDataBegin[i] = nullptr;
+        }
+        if (m_MaterialConstantBuffers[i]) {
+            m_MaterialConstantBuffers[i]->Unmap(0, nullptr);
+            m_MaterialConstantBufferDataBegin[i] = nullptr;
+        }
+        if (m_PassConstantBuffers[i]) {
+            m_PassConstantBuffers[i]->Unmap(0, nullptr);
+            m_PassConstantBufferDataBegin[i] = nullptr;
         }
     }
 
@@ -157,12 +234,12 @@ void RenderSystem::RegisterEntity(Entity* entity) {
     if (entity->HasComponent<MeshComponent>() && entity->HasComponent<TransformComponent>()) {
         m_RenderableEntities.push_back(entity);
 
-        // GPU¿¡ ¸Ş½Ã ¾÷·Îµå
+        // GPUì— ë©”ì‹œ ì—…ë¡œë“œ
         auto* meshComp = entity->GetComponent<MeshComponent>();
         if (meshComp && meshComp->isLoaded && !meshComp->vertexBuffer) {
             auto device = m_RendererCore->GetDevice();
 
-            // Vertex Buffer »ı¼º
+            // Vertex Buffer ìƒì„±
             D3D12_HEAP_PROPERTIES heapProps = {};
             heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
             D3D12_RESOURCE_DESC bufferDesc = {};
@@ -185,7 +262,7 @@ void RenderSystem::RegisterEntity(Entity* entity) {
             meshComp->vertexBufferView.StrideInBytes = sizeof(Vertex);
             meshComp->vertexBufferView.SizeInBytes = static_cast<UINT>(sizeof(Vertex) * meshComp->vertices.size());
 
-            // Index Buffer »ı¼º
+            // Index Buffer ìƒì„±
             bufferDesc.Width = sizeof(uint32_t) * meshComp->indices.size();
             device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshComp->indexBuffer));
 
@@ -213,10 +290,15 @@ void RenderSystem::Render() {
     commandList->SetGraphicsRootSignature(m_RootSignature.Get());
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    UINT frameIndex = 0; // ê°„ë‹¨í•˜ê²Œ 0ë²ˆ í”„ë ˆì„ ì‚¬ìš©
+    
+    // Pass constant buffer ì—…ë°ì´íŠ¸ (í”„ë ˆì„ë‹¹ í•œ ë²ˆ)
+    UpdatePassConstants(frameIndex);
+
     int objectIndex = 0;
     for (Entity* entity : m_RenderableEntities) {
         if (entity && entity->IsActive()) {
-            RenderEntity(entity);
+            RenderEntity(entity, frameIndex, objectIndex);
             objectIndex++;
         }
     }
@@ -225,7 +307,71 @@ void RenderSystem::Render() {
     m_RendererCore->Present();
 }
 
-void RenderSystem::RenderEntity(Entity* entity) {
+void RenderSystem::UpdatePassConstants(UINT frameIndex) {
+    PassConstants passConstants = {};
+    
+    XMMATRIX V = XMLoadFloat4x4(&m_ViewMatrix);
+    XMMATRIX P = XMLoadFloat4x4(&m_ProjMatrix);
+    XMMATRIX VP = XMMatrixMultiply(V, P);
+    
+    XMStoreFloat4x4(&passConstants.gView, XMMatrixTranspose(V));
+    XMStoreFloat4x4(&passConstants.gInvView, XMMatrixTranspose(XMMatrixInverse(nullptr, V)));
+    XMStoreFloat4x4(&passConstants.gProj, XMMatrixTranspose(P));
+    XMStoreFloat4x4(&passConstants.gInvProj, XMMatrixTranspose(XMMatrixInverse(nullptr, P)));
+    XMStoreFloat4x4(&passConstants.gViewProj, XMMatrixTranspose(VP));
+    XMStoreFloat4x4(&passConstants.gInvViewProj, XMMatrixTranspose(XMMatrixInverse(nullptr, VP)));
+    
+    // Eye position
+    XMMATRIX invV = XMMatrixInverse(nullptr, V);
+    XMStoreFloat3(&passConstants.gEyePosW, invV.r[3]);
+    
+    passConstants.gRenderTargetSize = XMFLOAT2(static_cast<float>(m_Width), static_cast<float>(m_Height));
+    passConstants.gInvRenderTargetSize = XMFLOAT2(1.0f / m_Width, 1.0f / m_Height);
+    passConstants.gNearZ = 0.1f;
+    passConstants.gFarZ = 100.0f;
+    passConstants.gTotalTime = m_TotalTime;
+    passConstants.gDeltaTime = 0.016f;
+    passConstants.gAmbientLight = m_AmbientLight;
+    
+    // ê¸°ë³¸ ë°©í–¥ê´‘ 3ê°œ ì„¤ì • (ì…°ì´ë”ê°€ NUM_DIR_LIGHTS=3ì„ ê¸°ëŒ€í•¨)
+    // ì²« ë²ˆì§¸ ë¼ì´íŠ¸: ìœ„ì—ì„œ ì•„ë˜ë¡œ
+    passConstants.gLights[0].Strength = XMFLOAT3(0.9f, 0.9f, 0.9f);
+    passConstants.gLights[0].Direction = XMFLOAT3(0.0f, -1.0f, 0.0f);
+    passConstants.gLights[0].FalloffStart = 1.0f;
+    passConstants.gLights[0].FalloffEnd = 1000.0f;
+    passConstants.gLights[0].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    passConstants.gLights[0].SpotPower = 1.0f;
+    
+    // ë‘ ë²ˆì§¸ ë¼ì´íŠ¸: ì•½ê°„ì˜ ë³´ì¡°ê´‘
+    passConstants.gLights[1].Strength = XMFLOAT3(0.3f, 0.3f, 0.3f);
+    passConstants.gLights[1].Direction = XMFLOAT3(-0.5f, -0.5f, -0.5f);
+    passConstants.gLights[1].FalloffStart = 1.0f;
+    passConstants.gLights[1].FalloffEnd = 10.0f;
+    passConstants.gLights[1].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    passConstants.gLights[1].SpotPower = 64.0f;
+    
+    // ì„¸ ë²ˆì§¸ ë¼ì´íŠ¸: ì•½ê°„ì˜ ë³´ì¡°ê´‘
+    passConstants.gLights[2].Strength = XMFLOAT3(0.2f, 0.2f, 0.2f);
+    passConstants.gLights[2].Direction = XMFLOAT3(0.5f, -0.5f, 0.5f);
+    passConstants.gLights[2].FalloffStart = 1.0f;
+    passConstants.gLights[2].FalloffEnd = 10.0f;
+    passConstants.gLights[2].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    passConstants.gLights[2].SpotPower = 64.0f;
+    
+    // ë‚˜ë¨¸ì§€ ë¼ì´íŠ¸ëŠ” 0ìœ¼ë¡œ ì´ˆê¸°í™”
+    for (int i = 3; i < 16; ++i) {
+        passConstants.gLights[i].Strength = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        passConstants.gLights[i].Direction = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        passConstants.gLights[i].FalloffStart = 0.0f;
+        passConstants.gLights[i].FalloffEnd = 0.0f;
+        passConstants.gLights[i].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        passConstants.gLights[i].SpotPower = 0.0f;
+    }
+    
+    memcpy(m_PassConstantBufferDataBegin[frameIndex], &passConstants, sizeof(PassConstants));
+}
+
+void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex) {
     auto transform = entity->GetComponent<TransformComponent>();
     auto mesh = entity->GetComponent<MeshComponent>();
     auto material = entity->GetComponent<MaterialComponent>();
@@ -235,27 +381,51 @@ void RenderSystem::RenderEntity(Entity* entity) {
     }
 
     auto commandList = m_RendererCore->GetCommandList();
-    UINT frameIndex = m_RendererCore->GetDevice() ? 0 : 0; // °£´ÜÇÏ°Ô 0¹ø ÇÁ·¹ÀÓ »ç¿ë
 
-    // »ó¼ö ¹öÆÛ µ¥ÀÌÅÍ ÁØºñ
-    SceneConstants constants;
-    XMStoreFloat4x4(&constants.world, XMMatrixTranspose(transform->GetWorldMatrix()));
-    XMStoreFloat4x4(&constants.view, XMMatrixTranspose(XMLoadFloat4x4(&m_ViewMatrix)));
-    XMStoreFloat4x4(&constants.proj, XMMatrixTranspose(XMLoadFloat4x4(&m_ProjMatrix)));
-    constants.color = material->albedo;
+    // Object constants (b0)
+    ObjectConstants objConstants = {};
+    XMMATRIX W = transform->GetWorldMatrix();
+    XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
+    XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
+    XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
+    
+    memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize), 
+           &objConstants, sizeof(ObjectConstants));
+    
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = m_ObjectConstantBuffers[frameIndex]->GetGPUVirtualAddress() 
+                                           + (objectIndex * m_ObjectConstantBufferSize);
+    commandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
-    // »ó¼ö ¹öÆÛ¿¡ µ¥ÀÌÅÍ º¹»ç
-    static int objIndex = 0;
-    memcpy(m_ConstantBufferDataBegin[0] + (objIndex * m_ConstantBufferSize), &constants, sizeof(SceneConstants));
+    // Material constants (b1)
+    RenderMaterialConstants matConstants = {};
+    matConstants.gDiffuseAlbedo = material->albedo;
+    
+    // FresnelR0 ê³„ì‚°: metallic ê°’ì— ë”°ë¼ ë³´ê°„
+    // Dielectric: ~0.04, Metal: albedo
+    XMFLOAT3 dielectricF0 = XMFLOAT3(0.04f, 0.04f, 0.04f);
+    XMVECTOR f0Dielectric = XMLoadFloat3(&dielectricF0);
+    XMVECTOR f0Metal = XMLoadFloat4(&material->albedo);
+    XMVECTOR f0 = XMVectorLerp(f0Dielectric, f0Metal, material->metallic);
+    XMStoreFloat3(&matConstants.gFresnelR0, f0);
+    
+    matConstants.gRoughness = material->roughness;
+    XMStoreFloat4x4(&matConstants.gMatTransform, XMMatrixIdentity());
+    
+    memcpy(m_MaterialConstantBufferDataBegin[frameIndex] + (objectIndex * m_MaterialConstantBufferSize), 
+           &matConstants, sizeof(RenderMaterialConstants));
+    
+    D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = m_MaterialConstantBuffers[frameIndex]->GetGPUVirtualAddress() 
+                                            + (objectIndex * m_MaterialConstantBufferSize);
+    commandList->SetGraphicsRootConstantBufferView(1, matCBAddress);
 
-    // »ó¼ö ¹öÆÛ ¹ÙÀÎµù
-    D3D12_GPU_VIRTUAL_ADDRESS cbAddress = m_ConstantBuffers[0]->GetGPUVirtualAddress() + (objIndex * m_ConstantBufferSize);
-    commandList->SetGraphicsRootConstantBufferView(0, cbAddress);
+    // Pass constants (b2) - í”„ë ˆì„ë‹¹ í•œ ë²ˆë§Œ ë°”ì¸ë”©
+    if (objectIndex == 0) {
+        D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+        commandList->SetGraphicsRootConstantBufferView(2, passCBAddress);
+    }
 
-    // ¸Ş½Ã ·»´õ¸µ
+    // ë©”ì‹œ ë Œë”ë§
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);
     commandList->IASetIndexBuffer(&mesh->indexBufferView);
     commandList->DrawIndexedInstanced(static_cast<UINT>(mesh->indices.size()), 1, 0, 0, 0);
-
-    objIndex = (objIndex + 1) % 100; // 100°³±îÁö ¼øÈ¯
 }
