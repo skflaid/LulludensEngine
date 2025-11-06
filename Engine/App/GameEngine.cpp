@@ -87,7 +87,7 @@ void GameEngine::CreateEntities()
     auto gt = ground->AddComponent<TransformComponent>();
     gt->SetPosition(0.0f, 0.0f, 0.0f);
     gt->SetScale(10.0f, 0.1f, 10.0f);
-    gt->SetRotation(0.0f, 0.0f, 10.0f);
+    gt->SetRotation(0.0f, 0.0f, 0.0f);
     auto rb = ground->AddComponent<RigidbodyComponent>();
     rb->isKinematic = true;
     ground->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
