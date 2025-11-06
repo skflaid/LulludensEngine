@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include <string>
 
 class PhysicsWorld;
 class PhysicsScheduler;
@@ -12,13 +13,13 @@ class Entity;
 class GameEngine
 {
 public:
-    GameEngine();                 // ¼±¾ğ¸¸
-    ~GameEngine();                // ¼±¾ğ¸¸
+    GameEngine();                 // ï¿½ï¿½ï¿½ï¿½
+    ~GameEngine();                // ï¿½ï¿½ï¿½ï¿½
 
     GameEngine(const GameEngine&) = delete;
     GameEngine& operator=(const GameEngine&) = delete;
 
-    // ÀÌµ¿µµ Çì´õ¿¡ '¼±¾ğ¸¸' ÇÏ°í, Á¤ÀÇ´Â .cpp¿¡¼­
+    // ï¿½Ìµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ 'ï¿½ï¿½ï¿½ï¿½' ï¿½Ï°ï¿½, ï¿½ï¿½ï¿½Ç´ï¿½ .cppï¿½ï¿½ï¿½ï¿½
     GameEngine(GameEngine&&) noexcept;
     GameEngine& operator=(GameEngine&&) noexcept;
 
@@ -27,9 +28,12 @@ public:
     void Render();
     void Shutdown();
 
-    // ¿£Æ¼Æ¼ Á¢±Ù¿ë ÃÖ¼Ò ÀÎÅÍÆäÀÌ½º¸¸ À¯Áö
+    // ï¿½ï¿½Æ¼Æ¼ ï¿½ï¿½ï¿½Ù¿ï¿½ ï¿½Ö¼ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     uint64_t GetEntityCount() const;
     Entity* GetEntityByIndex(uint64_t index);
+
+    // FBX ëª¨ë¸ ë¡œë“œ í•¨ìˆ˜
+    void LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll);
 
 private:
     void CreateEntities();
