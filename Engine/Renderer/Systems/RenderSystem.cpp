@@ -3,6 +3,7 @@
 #include "../Components/TransformComponent.h"
 #include "../Components/MeshComponent.h"
 #include "../Components/MaterialComponent.h"
+#include "../Common/d3dUtil.h"
 #include <d3dcompiler.h>
 
 #pragma comment(lib, "d3dcompiler.lib")
@@ -99,42 +100,12 @@ void RenderSystem::CreatePipelineState() {
     D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
     device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature));
 
-    // ¼ÎÀÌ´õ ÄÚµå
-    const char* shaderCode = R"(
-        cbuffer SceneConstants : register(b0) {
-            float4x4 world;
-            float4x4 view;
-            float4x4 proj;
-            float4 color;
-        };
-
-        struct VS_INPUT {
-            float3 pos : POSITION;
-            float3 normal : NORMAL;
-            float2 texCoord : TEXCOORD;
-        };
-
-        struct PS_INPUT {
-            float4 pos : SV_POSITION;
-        };
-
-        PS_INPUT VSMain(VS_INPUT input) {
-            PS_INPUT output;
-            float4 worldPos = mul(float4(input.pos, 1.0f), world);
-            float4 viewPos = mul(worldPos, view);
-            output.pos = mul(viewPos, proj);
-            return output;
-        }
-
-        float4 PSMain(PS_INPUT input) : SV_TARGET {
-            return color;
-        }
-    )";
+    const std::wstring gbufferPath = L"Renderer/Shaders/default.hlsl";
 
     ComPtr<ID3DBlob> vertexShader;
     ComPtr<ID3DBlob> pixelShader;
-    D3DCompile(shaderCode, strlen(shaderCode), "BasicShader", nullptr, nullptr, "VSMain", "vs_5_0", 0, 0, &vertexShader, &error);
-    D3DCompile(shaderCode, strlen(shaderCode), "BasicShader", nullptr, nullptr, "PSMain", "ps_5_0", 0, 0, &pixelShader, &error);
+    vertexShader = d3dUtil::CompileShader(gbufferPath, nullptr, "VSMain", "vs_5_0");
+    pixelShader = d3dUtil::CompileShader(gbufferPath, nullptr, "PSMain", "ps_5_0");
 
     // Input Layout
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
