@@ -102,12 +102,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Renderer;$(ProjectDir)Physics;$(ProjectDir);$(ProjectDir)Core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Libraries\assimp\include\contrib\zlib;$(ProjectDir)Renderer;$(ProjectDir)Physics;$(ProjectDir);$(SolutionDir)Libraries\assimp\include\build;$(SolutionDir)Libraries\assimp\include;$(SolutionDir)Libraries\assimp\lib\$(Configuration);$(ProjectDir)Core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;dxguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;dxguid.lib;assimp-vc143-mtd.lib;zlibstaticd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)Libraries\assimp\lib\Debug;$(SolutionDir)Libraries\assimp\include\contrib\zlib\Debug\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -122,6 +123,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -136,6 +138,8 @@
     <ClInclude Include="..\Common\UploadBuffer.h" />
     <ClInclude Include="App\EntityInspector.h" />
     <ClInclude Include="App\GameEngine.h" />
+    <ClInclude Include="Core\FBXLoader.h" />
+    <ClInclude Include="Core\ResourceManager.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
     <ClInclude Include="Physics\Systems\CollisionSystem.h" />
     <ClInclude Include="Core\Entity.h" />
@@ -148,6 +152,7 @@
     <ClInclude Include="Renderer\Components\MaterialComponent.h" />
     <ClInclude Include="Renderer\Components\MeshComponent.h" />
     <ClInclude Include="Renderer\Components\TransformComponent.h" />
+    <ClInclude Include="Renderer\Model.h" />
     <ClInclude Include="Renderer\RendererCore.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
     <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
@@ -164,6 +169,7 @@
     <ClCompile Include="App\EntityInspector.cpp" />
     <ClCompile Include="App\GameEngine.cpp" />
     <ClCompile Include="App\MainApp.cpp" />
+    <ClCompile Include="Core\FBXLoader.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
