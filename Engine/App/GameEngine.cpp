@@ -10,6 +10,9 @@
 #include "Renderer/Components/TransformComponent.h"
 #include "Renderer/Components/MeshComponent.h"
 #include "Renderer/Components/MaterialComponent.h"
+#include "Core/FBXLoader.h"
+#include "Core/ModelInstantiation.h"
+// Model.h는 FBXLoader.h에서 이미 포함되므로 여기서는 제거
 
 GameEngine::GameEngine() = default;
 GameEngine::~GameEngine() = default;
@@ -97,4 +100,52 @@ void GameEngine::CreateEntities()
     m_PhysicsWorld->RegisterEntity(ground.get());
     m_RenderSystem->RegisterEntity(ground.get());
     m_Entities.push_back(std::move(ground));
+
+    // FBX 모델 로드 예제
+    // 주의: 실제 FBX 파일 경로로 변경해야 합니다.
+    LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f);
+}
+
+void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll)
+{
+    // 1. FBXLoader를 사용하여 FBX 파일 로드
+    FBXLoader loader;
+    Model* model = loader.Load(filePath);
+    
+    if (!model) {
+        // 로드 실패 처리 (로그 출력 등)
+        // Log::Error("Failed to load FBX file: %s", filePath.c_str());
+        return;
+    }
+
+    // 2. Entity 생성 및 TransformComponent 추가
+    auto fbxEntity = std::make_unique<Entity>(entityId);
+    auto transform = fbxEntity->AddComponent<TransformComponent>();
+    transform->SetPosition(0.0f, 2.0f, 0.0f);  // 위치 설정
+    
+    // 회전 설정 방법 1: 각도(degree) 단위로 설정 (추천)
+    transform->SetRotationDegrees(pitch, yaw, roll);   // Y축으로 45도 회전 (테스트용)
+    // transform->SetRotationDegrees(0.0f, 0.0f, 0.0f);   // 회전 없음
+    
+    // 회전 설정 방법 2: 라디안 단위로 직접 설정
+    // transform->SetRotation(0.0f, XM_PI / 4.0f, 0.0f);   // Y축으로 45도 회전
+    // Pitch (X축), Yaw (Y축), Roll (Z축)
+    
+    transform->SetScale(1.0f, 1.0f, 1.0f);     // 스케일 설정
+
+    // 3. Model을 Entity로 변환 (모든 메시를 하나로 병합)
+    if (ModelInstantiation::InstantiateToEntity(model, fbxEntity.get(), true)) {
+        // 4. RenderSystem에 등록 (GPU 버퍼 자동 생성)
+        m_RenderSystem->RegisterEntity(fbxEntity.get());
+        
+        // 5. Entity를 엔진에 추가
+        m_Entities.push_back(std::move(fbxEntity));
+    }
+    else {
+        // 변환 실패 처리
+        // Log::Error("Failed to instantiate model to entity");
+    }
+
+    // 6. Model 메모리 해제 (FBXLoader가 new로 할당했으므로 delete 필요)
+    delete model;
 }

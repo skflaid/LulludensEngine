@@ -9,8 +9,8 @@
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
-// 정점 데이터 구조체 (기존 구조 확장)
-struct Vertex {
+// 정점 데이터 구조체 (Model용 - MeshComponent::Vertex와 구분)
+struct ModelVertex {
     XMFLOAT3 Pos;
     XMFLOAT3 Normal;
     XMFLOAT2 TexC; // 텍스처 좌표 추가
@@ -29,6 +29,11 @@ class Mesh {
 public:
     std::string Name;
 
+    // CPU 데이터 (Entity 변환 시 사용)
+    std::vector<ModelVertex> Vertices;
+    std::vector<uint32_t> Indices;
+
+    // GPU 리소스 (렌더링 시 사용)
     ComPtr<ID3D12Resource> VertexBuffer;
     ComPtr<ID3D12Resource> IndexBuffer;
     D3D12_VERTEX_BUFFER_VIEW VertexBufferView;

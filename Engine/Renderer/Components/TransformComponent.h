@@ -27,6 +27,15 @@ struct TransformComponent : public IComponent {
         rotation = { pitch, yaw, roll };
     }
 
+    // 각도(degree) 단위로 회전 설정 (라디안으로 자동 변환)
+    void SetRotationDegrees(float pitchDeg, float yawDeg, float rollDeg) {
+        rotation = { 
+            XMConvertToRadians(pitchDeg), 
+            XMConvertToRadians(yawDeg), 
+            XMConvertToRadians(rollDeg) 
+        };
+    }
+
     void SetScale(float x, float y, float z) {
         scale = { x, y, z };
     }

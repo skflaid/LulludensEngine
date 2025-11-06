@@ -30,7 +30,14 @@ Model* FBXLoader::Load(const std::string& filePath) {
         return nullptr;
     }
 
-    m_Directory = filePath.substr(0, filePath.find_last_of('/'));
+    // 디렉토리 경로 추출 (Windows와 Unix 모두 지원)
+    size_t lastSlash = filePath.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        m_Directory = filePath.substr(0, lastSlash);
+    }
+    else {
+        m_Directory = ".";
+    }
 
     auto model = std::make_unique<Model>();
 
@@ -53,12 +60,12 @@ void FBXLoader::ProcessNode(aiNode* node, const aiScene* scene, Model* outModel)
 }
 
 Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel) {
-    std::vector<Vertex> vertices;
+    std::vector<ModelVertex> vertices;
     std::vector<uint32_t> indices;
 
     // 1. 정점 데이터(Vertex Data)를 순회하며 추출
     for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
-        Vertex v;
+        ModelVertex v;
         v.Pos = { mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z };
 
         if (mesh->HasNormals()) {
@@ -92,16 +99,21 @@ Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel
     newMesh->Name = mesh->mName.C_Str();
     newMesh->IndexCount = (UINT)indices.size();
     newMesh->MatIndex = mesh->mMaterialIndex;
+    
+    // CPU 데이터 저장 (Entity 변환 시 사용)
+    newMesh->Vertices = std::move(vertices);
+    newMesh->Indices = std::move(indices);
 
     // TODO: 아래 부분은 엔진의 D3D12 리소스 관리 시스템과 연동해야 합니다.
     // -- 버퍼 생성 코드 (D3D12 리소스 생성 함수 사용) --
     // 이 함수들은 CPU의 데이터를 GPU 메모리로 복사하는 역할을 합니다.
+    // GPU 버퍼는 Entity로 변환할 때 RenderSystem에서 생성됩니다.
     //
-    // const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-    // newMesh->VertexBuffer = GameEngine::GetRenderer()->CreateVertexBuffer(vertices.data(), vbByteSize);
+    // const UINT vbByteSize = (UINT)newMesh->Vertices.size() * sizeof(ModelVertex);
+    // newMesh->VertexBuffer = GameEngine::GetRenderer()->CreateVertexBuffer(newMesh->Vertices.data(), vbByteSize);
     //
-    // const UINT ibByteSize = (UINT)indices.size() * sizeof(uint32_t);
-    // newMesh->IndexBuffer = GameEngine::GetRenderer()->CreateIndexBuffer(indices.data(), ibByteSize);
+    // const UINT ibByteSize = (UINT)newMesh->Indices.size() * sizeof(uint32_t);
+    // newMesh->IndexBuffer = GameEngine::GetRenderer()->CreateIndexBuffer(newMesh->Indices.data(), ibByteSize);
     //
     // newMesh->VertexBufferView = newMesh->VertexBuffer->GetVertexBufferView();
     // newMesh->IndexBufferView = newMesh->IndexBuffer->GetIndexBufferView();

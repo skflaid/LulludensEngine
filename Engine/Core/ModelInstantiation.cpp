@@ -30,7 +30,7 @@ namespace ModelInstantiation {
             for (const auto& mesh : model->Meshes) {
                 if (!mesh) continue;
                 
-                // Vertex 변환: Model::Vertex -> MeshComponent::Vertex
+                // Vertex 변환: ModelVertex -> MeshComponent::Vertex
                 for (const auto& modelVertex : mesh->Vertices) {
                     ::Vertex meshCompVertex; // MeshComponent의 Vertex 사용
                     meshCompVertex.position = modelVertex.Pos;
@@ -56,7 +56,7 @@ namespace ModelInstantiation {
                 
                 MeshComponent* meshComp = entity->AddComponent<MeshComponent>();
                 
-                // Vertex 변환: Model::Vertex -> MeshComponent::Vertex
+                // Vertex 변환: ModelVertex -> MeshComponent::Vertex
                 for (const auto& modelVertex : mesh->Vertices) {
                     ::Vertex meshCompVertex; // MeshComponent의 Vertex 사용
                     meshCompVertex.position = modelVertex.Pos;
