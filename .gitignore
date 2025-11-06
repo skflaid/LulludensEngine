@@ -25,6 +25,8 @@
 *.la
 *.a
 *.lib
+!/Libraries/**/*.lib
+!/Libraries/**/*.dll
 
 # Executables
 *.exe
