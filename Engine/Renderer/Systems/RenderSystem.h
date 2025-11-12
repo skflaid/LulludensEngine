@@ -27,9 +27,12 @@ public:
     void Render();
 
 private:
+    void RenderGBufferPass(UINT frameIndex);
+    void RenderLightingPass(UINT frameIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
-    void CreatePipelineState();
+    void CreateGBufferPipelineState();
+    void CreateLightingPipelineState();
     void CreateConstantBuffer();
 
 private:
@@ -39,9 +42,11 @@ private:
     uint32_t m_Width;
     uint32_t m_Height;
 
-    // Pipeline state
-    ComPtr<ID3D12RootSignature> m_RootSignature;
-    ComPtr<ID3D12PipelineState> m_PipelineState;
+    // Pipeline states for Deferred Rendering
+    ComPtr<ID3D12RootSignature> m_GBufferRootSignature;
+    ComPtr<ID3D12PipelineState> m_GBufferPipelineState;
+    ComPtr<ID3D12RootSignature> m_LightingRootSignature;
+    ComPtr<ID3D12PipelineState> m_LightingPipelineState;
 
     // Camera matrices
     XMFLOAT4X4 m_ViewMatrix;

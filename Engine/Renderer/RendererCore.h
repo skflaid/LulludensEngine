@@ -25,6 +25,20 @@ public:
 
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }
+    uint32_t GetFrameIndex() const { return m_FrameIndex; }
+    ID3D12DescriptorHeap* GetRTVHeap() const { return m_RTVHeap.Get(); }
+    ID3D12DescriptorHeap* GetDSVHeap() const { return m_DSVHeap.Get(); }
+    uint32_t GetRTVDescriptorSize() const { return m_RTVDescriptorSize; }
+
+    // G-Buffer access
+    ID3D12Resource* GetGBufferPosition() const { return m_GBufferPosition.Get(); }
+    ID3D12Resource* GetGBufferNormal() const { return m_GBufferNormal.Get(); }
+    ID3D12Resource* GetGBufferAlbedo() const { return m_GBufferAlbedo.Get(); }
+    ID3D12Resource* GetGBufferMaterial() const { return m_GBufferMaterial.Get(); }
+    ID3D12DescriptorHeap* GetGBufferRTVHeap() const { return m_GBufferRTVHeap.Get(); }
+    ID3D12DescriptorHeap* GetGBufferSRVHeap() const { return m_GBufferSRVHeap.Get(); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferRTVHandle(int index) const;
+    D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferSRVHandle(int index) const;
 
 private:
     void CreateDevice();
@@ -32,6 +46,7 @@ private:
     void CreateSwapChain(HWND hwnd);
     void CreateRenderTargetViews();
     void CreateDepthStencilBuffer();
+    void CreateGBuffer();
     void CreateFence();
 
     void WaitForGPU();
@@ -56,6 +71,16 @@ private:
     // Depth stencil
     ComPtr<ID3D12Resource> m_DepthStencil;
     ComPtr<ID3D12DescriptorHeap> m_DSVHeap;
+
+    // G-Buffer
+    ComPtr<ID3D12Resource> m_GBufferPosition;
+    ComPtr<ID3D12Resource> m_GBufferNormal;
+    ComPtr<ID3D12Resource> m_GBufferAlbedo;
+    ComPtr<ID3D12Resource> m_GBufferMaterial;
+    ComPtr<ID3D12DescriptorHeap> m_GBufferRTVHeap;
+    ComPtr<ID3D12DescriptorHeap> m_GBufferSRVHeap;
+    uint32_t m_GBufferRTVDescriptorSize;
+    uint32_t m_GBufferSRVDescriptorSize;
 
     // Synchronization objects
     ComPtr<ID3D12Fence> m_Fence;

@@ -7,6 +7,8 @@
 RendererCore::RendererCore()
     : m_FrameIndex(0)
     , m_RTVDescriptorSize(0)
+    , m_GBufferRTVDescriptorSize(0)
+    , m_GBufferSRVDescriptorSize(0)
     , m_Width(0)
     , m_Height(0)
     , m_FenceEvent(nullptr) {
@@ -29,6 +31,7 @@ bool RendererCore::Initialize(HWND hwnd, uint32_t width, uint32_t height) {
         CreateSwapChain(hwnd);
         CreateRenderTargetViews();
         CreateDepthStencilBuffer();
+        CreateGBuffer();
         CreateFence();
 
         return true;
@@ -171,6 +174,118 @@ void RendererCore::CreateDepthStencilBuffer() {
     m_Device->CreateDepthStencilView(m_DepthStencil.Get(), nullptr, m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
+void RendererCore::CreateGBuffer() {
+    // G-Buffer RTV Heap 생성 (4개 RT: Position, Normal, Albedo, Material)
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+    rtvHeapDesc.NumDescriptors = 4;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_GBufferRTVHeap));
+    m_GBufferRTVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+    // G-Buffer SRV Heap 생성 (4개 SRV)
+    D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+    srvHeapDesc.NumDescriptors = 4;
+    srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    m_Device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_GBufferSRVHeap));
+    m_GBufferSRVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    D3D12_RESOURCE_DESC gbufferDesc = {};
+    gbufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    gbufferDesc.Width = m_Width;
+    gbufferDesc.Height = m_Height;
+    gbufferDesc.DepthOrArraySize = 1;
+    gbufferDesc.MipLevels = 1;
+    gbufferDesc.SampleDesc.Count = 1;
+    gbufferDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_GBufferRTVHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
+
+    // Position Buffer (R32G32B32A32_FLOAT)
+    gbufferDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    D3D12_CLEAR_VALUE clearValue = {};
+    clearValue.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    clearValue.Color[0] = 0.0f;
+    clearValue.Color[1] = 0.0f;
+    clearValue.Color[2] = 0.0f;
+    clearValue.Color[3] = 0.0f;
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &gbufferDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_GBufferPosition)
+    );
+    m_Device->CreateRenderTargetView(m_GBufferPosition.Get(), nullptr, rtvHandle);
+    m_Device->CreateShaderResourceView(m_GBufferPosition.Get(), nullptr, srvHandle);
+    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
+    srvHandle.ptr += m_GBufferSRVDescriptorSize;
+
+    // Normal Buffer (R16G16B16A16_FLOAT)
+    gbufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    clearValue.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &gbufferDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_GBufferNormal)
+    );
+    m_Device->CreateRenderTargetView(m_GBufferNormal.Get(), nullptr, rtvHandle);
+    m_Device->CreateShaderResourceView(m_GBufferNormal.Get(), nullptr, srvHandle);
+    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
+    srvHandle.ptr += m_GBufferSRVDescriptorSize;
+
+    // Albedo Buffer (R8G8B8A8_UNORM)
+    gbufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    clearValue.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &gbufferDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_GBufferAlbedo)
+    );
+    m_Device->CreateRenderTargetView(m_GBufferAlbedo.Get(), nullptr, rtvHandle);
+    m_Device->CreateShaderResourceView(m_GBufferAlbedo.Get(), nullptr, srvHandle);
+    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
+    srvHandle.ptr += m_GBufferSRVDescriptorSize;
+
+    // Material Buffer (R8G8B8A8_UNORM: Roughness, Metallic, etc.)
+    gbufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    clearValue.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &gbufferDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_GBufferMaterial)
+    );
+    m_Device->CreateRenderTargetView(m_GBufferMaterial.Get(), nullptr, rtvHandle);
+    m_Device->CreateShaderResourceView(m_GBufferMaterial.Get(), nullptr, srvHandle);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetGBufferRTVHandle(int index) const {
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = m_GBufferRTVHeap->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += index * m_GBufferRTVDescriptorSize;
+    return handle;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetGBufferSRVHandle(int index) const {
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += index * m_GBufferSRVDescriptorSize;
+    return handle;
+}
+
 void RendererCore::CreateFence() {
     m_Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_Fence));
 
@@ -184,28 +299,15 @@ void RendererCore::BeginFrame() {
     m_CommandAllocators[m_FrameIndex]->Reset();
     m_CommandList->Reset(m_CommandAllocators[m_FrameIndex].Get(), nullptr);
 
-    // Transition render target to render target state
+    // Transition back buffer to render target state (for lighting pass)
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = m_RenderTargets[m_FrameIndex].Get();
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-
     m_CommandList->ResourceBarrier(1, &barrier);
 
-    // Clear render target and depth stencil
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_RTVHeap->GetCPUDescriptorHandleForHeapStart();
-    rtvHandle.ptr += m_FrameIndex * m_RTVDescriptorSize;
-
-    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_DSVHeap->GetCPUDescriptorHandleForHeapStart();
-
-    const float clearColor[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    m_CommandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-    m_CommandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-
-    m_CommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
-
-    // Set viewport and scissor rect
+    // Set viewport and scissor rect (used by both passes)
     D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(m_Width), static_cast<float>(m_Height), 0.0f, 1.0f };
     D3D12_RECT scissorRect = { 0, 0, static_cast<LONG>(m_Width), static_cast<LONG>(m_Height) };
 
@@ -214,7 +316,7 @@ void RendererCore::BeginFrame() {
 }
 
 void RendererCore::EndFrame() {
-    // Transition render target to present state
+    // Transition back buffer to present state (if it was used as render target)
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = m_RenderTargets[m_FrameIndex].Get();
