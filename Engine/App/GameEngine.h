@@ -35,6 +35,9 @@ public:
     // FBX 모델 로드 함수
     void LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll);
 
+    // 렌더링 모드 토글
+    void ToggleRenderMode();
+
 private:
     void CreateEntities();
 

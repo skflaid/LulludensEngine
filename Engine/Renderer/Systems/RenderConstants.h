@@ -45,6 +45,9 @@ struct PassConstants {
     float gDeltaTime;
     XMFLOAT4 gAmbientLight;
     PassLight gLights[16];
+    int gRenderMode;
+    float cbPerObjectPad3;
+    XMFLOAT2 cbPerObjectPad4;
 };
 
 #pragma pack(pop)

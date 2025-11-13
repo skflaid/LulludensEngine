@@ -40,6 +40,13 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferRTVHandle(int index) const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferSRVHandle(int index) const;
 
+    // SSGI access
+    ID3D12Resource* GetSSGIBuffer() const { return m_SSGIBuffer.Get(); }
+    ID3D12DescriptorHeap* GetSSGIRTVHeap() const { return m_SSGIRTVHeap.Get(); }
+    ID3D12DescriptorHeap* GetSSGISRVHeap() const { return m_SSGISRVHeap.Get(); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetSSGIRTVHandle() const;
+    D3D12_CPU_DESCRIPTOR_HANDLE GetSSGISRVHandle() const;
+
 private:
     void CreateDevice();
     void CreateCommandQueue();
@@ -47,6 +54,7 @@ private:
     void CreateRenderTargetViews();
     void CreateDepthStencilBuffer();
     void CreateGBuffer();
+    void CreateSSGIBuffer();
     void CreateFence();
 
     void WaitForGPU();
@@ -81,6 +89,13 @@ private:
     ComPtr<ID3D12DescriptorHeap> m_GBufferSRVHeap;
     uint32_t m_GBufferRTVDescriptorSize;
     uint32_t m_GBufferSRVDescriptorSize;
+
+    // SSGI
+    ComPtr<ID3D12Resource> m_SSGIBuffer;
+    ComPtr<ID3D12DescriptorHeap> m_SSGIRTVHeap;
+    ComPtr<ID3D12DescriptorHeap> m_SSGISRVHeap;
+    uint32_t m_SSGIRTVDescriptorSize;
+    uint32_t m_SSGISRVDescriptorSize;
 
     // Synchronization objects
     ComPtr<ID3D12Fence> m_Fence;

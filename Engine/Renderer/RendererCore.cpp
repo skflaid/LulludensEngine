@@ -9,6 +9,8 @@ RendererCore::RendererCore()
     , m_RTVDescriptorSize(0)
     , m_GBufferRTVDescriptorSize(0)
     , m_GBufferSRVDescriptorSize(0)
+    , m_SSGIRTVDescriptorSize(0)
+    , m_SSGISRVDescriptorSize(0)
     , m_Width(0)
     , m_Height(0)
     , m_FenceEvent(nullptr) {
@@ -32,6 +34,7 @@ bool RendererCore::Initialize(HWND hwnd, uint32_t width, uint32_t height) {
         CreateRenderTargetViews();
         CreateDepthStencilBuffer();
         CreateGBuffer();
+        CreateSSGIBuffer();
         CreateFence();
 
         return true;
@@ -183,9 +186,9 @@ void RendererCore::CreateGBuffer() {
     m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_GBufferRTVHeap));
     m_GBufferRTVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    // G-Buffer SRV Heap 생성 (4개 SRV)
+    // G-Buffer SRV Heap 생성 (4개 SRV + 1개 SSGI SRV = 5개)
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = 4;
+    srvHeapDesc.NumDescriptors = 5;
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_Device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_GBufferSRVHeap));
@@ -272,6 +275,72 @@ void RendererCore::CreateGBuffer() {
     );
     m_Device->CreateRenderTargetView(m_GBufferMaterial.Get(), nullptr, rtvHandle);
     m_Device->CreateShaderResourceView(m_GBufferMaterial.Get(), nullptr, srvHandle);
+}
+
+void RendererCore::CreateSSGIBuffer() {
+    // SSGI RTV Heap 생성
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+    rtvHeapDesc.NumDescriptors = 1;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_SSGIRTVHeap));
+    m_SSGIRTVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+    // SSGI SRV Heap 생성
+    D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+    srvHeapDesc.NumDescriptors = 1;
+    srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    m_Device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SSGISRVHeap));
+    m_SSGISRVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    D3D12_RESOURCE_DESC ssgiDesc = {};
+    ssgiDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    ssgiDesc.Width = m_Width;
+    ssgiDesc.Height = m_Height;
+    ssgiDesc.DepthOrArraySize = 1;
+    ssgiDesc.MipLevels = 1;
+    ssgiDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    ssgiDesc.SampleDesc.Count = 1;
+    ssgiDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_CLEAR_VALUE clearValue = {};
+    clearValue.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    clearValue.Color[0] = 0.0f;
+    clearValue.Color[1] = 0.0f;
+    clearValue.Color[2] = 0.0f;
+    clearValue.Color[3] = 0.0f;
+
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &ssgiDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_SSGIBuffer)
+    );
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_SSGIRTVHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_SSGISRVHeap->GetCPUDescriptorHandleForHeapStart();
+
+    m_Device->CreateRenderTargetView(m_SSGIBuffer.Get(), nullptr, rtvHandle);
+    m_Device->CreateShaderResourceView(m_SSGIBuffer.Get(), nullptr, srvHandle);
+    
+    // SSGI SRV를 G-Buffer SRV Heap의 4번째 슬롯에 복사 (초기화 시 한 번만)
+    D3D12_CPU_DESCRIPTOR_HANDLE gbufferSrvHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
+    gbufferSrvHandle.ptr += 4 * m_GBufferSRVDescriptorSize;
+    m_Device->CopyDescriptorsSimple(1, gbufferSrvHandle, srvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIRTVHandle() const {
+    return m_SSGIRTVHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetSSGISRVHandle() const {
+    return m_SSGISRVHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetGBufferRTVHandle(int index) const {

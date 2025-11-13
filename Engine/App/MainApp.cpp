@@ -3,7 +3,7 @@
 #include "GameEngine.h"
 #include "EntityInspector.h"
 
-// ±âÁ¸ Àü¿ªº¯¼ö À¯Áö (´Ù¸¥ ¸ğµâ¿¡¼­ ÂüÁ¶ÇÒ ¼ö ÀÖÀ¸¹Ç·Î ÀÌ¸§ ±×´ë·Î)
+// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Ù¸ï¿½ ï¿½ï¿½â¿¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ ï¿½Ì¸ï¿½ ï¿½×´ï¿½ï¿½)
 GameEngine g_Engine;
 EntityInspector g_Inspector;
 HWND g_Hwnd = nullptr;
@@ -17,6 +17,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         g_Running = false;
         PostQuitMessage(0);
+        return 0;
+    case WM_KEYDOWN:
+        if (wParam == 'I' || wParam == 'i') {
+            // Ií‚¤ë¥¼ ëˆŒë €ì„ ë•Œ ë Œë”ë§ ëª¨ë“œ í† ê¸€
+            g_Engine.ToggleRenderMode();
+        }
         return 0;
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -59,7 +65,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     if (!g_Engine.Initialize(g_Hwnd, WINDOW_WIDTH, WINDOW_HEIGHT))
         return -1;
 
-    // ¸ŞÀÎ ·çÇÁ
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     MSG msg = {};
     LARGE_INTEGER freq, last, cur;
     QueryPerformanceFrequency(&freq);

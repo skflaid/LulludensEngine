@@ -33,6 +33,9 @@ cbuffer cbPass : register(b0)
     float gDeltaTime;
     float4 gAmbientLight;
     Light gLights[MaxLights];
+    int gRenderMode;  // 0: Composite, 1: Lighting, 2: SSGI
+    float cbPerObjectPad3;
+    float2 cbPerObjectPad4;
 };
 
 // G-Buffer textures
@@ -40,6 +43,7 @@ Texture2D gPositionMap : register(t0);
 Texture2D gNormalMap   : register(t1);
 Texture2D gAlbedoMap   : register(t2);
 Texture2D gMaterialMap : register(t3);
+Texture2D gSSGIMap     : register(t4);
 
 SamplerState gsamPointWrap : register(s0);
 
@@ -96,7 +100,25 @@ float4 PS(VertexOut pin) : SV_Target
     // Compute lighting
     float4 directLight = ComputeLighting(gLights, mat, posW, normalW, toEyeW, shadowFactor);
 
-    float4 litColor = ambient + directLight;
+    // SSGI 샘플링
+    float4 ssgi = gSSGIMap.Sample(gsamPointWrap, pin.TexC);
+    float3 ssgiContribution = ssgi.rgb * albedo.rgb;
+
+    // 모드에 따라 다른 결과 반환
+    float4 litColor;
+    if (gRenderMode == 0) {
+        // Composite: Lighting + SSGI
+        litColor = ambient + directLight + float4(ssgiContribution, 0.0f);
+    }
+    else if (gRenderMode == 1) {
+        // Lighting only
+        litColor = ambient + directLight;
+    }
+    else {
+        // SSGI only
+        litColor = float4(ssgiContribution, 1.0f);
+    }
+    
     litColor.a = albedo.a;
 
     return litColor;

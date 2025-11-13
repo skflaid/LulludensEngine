@@ -10,6 +10,12 @@
 
 using namespace DirectX;
 
+enum class RenderMode {
+    Composite,  // Lighting + SSGI
+    Lighting,   // Lighting only
+    SSGI        // SSGI only
+};
+
 class RenderSystem : public ISystem {
 public:
     RenderSystem(HWND hwnd, uint32_t width, uint32_t height);
@@ -25,14 +31,18 @@ public:
     void UnregisterEntity(Entity* entity);
 
     void Render();
+    void ToggleRenderMode();
+    RenderMode GetRenderMode() const { return m_RenderMode; }
 
 private:
     void RenderGBufferPass(UINT frameIndex);
     void RenderLightingPass(UINT frameIndex);
+    void RenderSSGIPass(UINT frameIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
     void CreateGBufferPipelineState();
     void CreateLightingPipelineState();
+    void CreateSSGIPipelineState();
     void CreateConstantBuffer();
 
 private:
@@ -47,6 +57,8 @@ private:
     ComPtr<ID3D12PipelineState> m_GBufferPipelineState;
     ComPtr<ID3D12RootSignature> m_LightingRootSignature;
     ComPtr<ID3D12PipelineState> m_LightingPipelineState;
+    ComPtr<ID3D12RootSignature> m_SSGIRootSignature;
+    ComPtr<ID3D12PipelineState> m_SSGIPipelineState;
 
     // Camera matrices
     XMFLOAT4X4 m_ViewMatrix;
@@ -55,6 +67,9 @@ private:
     // Lighting
     XMFLOAT4 m_AmbientLight = { 0.6f, 0.6f, 0.6f, 1.0f };
     float m_TotalTime = 0.0f;
+    
+    // Render mode
+    RenderMode m_RenderMode = RenderMode::Composite;
 
     // Constant buffers
     static const int FrameCount = 2;

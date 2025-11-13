@@ -51,6 +51,11 @@ void GameEngine::Render()
     if (m_RenderSystem) m_RenderSystem->Render();
 }
 
+void GameEngine::ToggleRenderMode()
+{
+    if (m_RenderSystem) m_RenderSystem->ToggleRenderMode();
+}
+
 void GameEngine::Shutdown()
 {
     if (m_RenderSystem) { m_RenderSystem->Shutdown(); m_RenderSystem.reset(); }
