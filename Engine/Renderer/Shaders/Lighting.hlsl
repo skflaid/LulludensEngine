@@ -2,7 +2,7 @@
 
 // Defaults for number of lights.
 #ifndef NUM_DIR_LIGHTS
-#define NUM_DIR_LIGHTS 3
+#define NUM_DIR_LIGHTS 4
 #endif
 
 #ifndef NUM_POINT_LIGHTS
@@ -95,7 +95,7 @@ float4 PS(VertexOut pin) : SV_Target
     float4 ambient = gAmbientLight * albedo;
 
     // Shadow factor (all 1.0 for now)
-    float3 shadowFactor = float3(1.0f, 1.0f, 1.0f);
+    float4 shadowFactor = float4(1.0f, 1.0f, 1.0f, 1.0f);
 
     // Compute lighting
     float4 directLight = ComputeLighting(gLights, mat, posW, normalW, toEyeW, shadowFactor);

@@ -46,6 +46,8 @@ public:
     ID3D12DescriptorHeap* GetSSGISRVHeap() const { return m_SSGISRVHeap.Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGIRTVHandle() const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGISRVHandle() const;
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandle() const;
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandleFromGBufferHeap() const;
 
 private:
     void CreateDevice();

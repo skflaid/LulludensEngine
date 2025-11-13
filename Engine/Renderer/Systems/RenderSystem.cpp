@@ -320,7 +320,7 @@ void RenderSystem::CreateLightingPipelineState() {
 void RenderSystem::CreateSSGIPipelineState() {
     auto device = m_RendererCore->GetDevice();
 
-    // Root Signature (CBV b0 for Pass constants, DescriptorTable for G-Buffer SRVs)
+    // Root Signature (CBV b0 for Pass constants, DescriptorTable for G-Buffer SRVs, UAV for output)
     D3D12_DESCRIPTOR_RANGE srvTable[4] = {};
     srvTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     srvTable[0].NumDescriptors = 1;
@@ -346,7 +346,14 @@ void RenderSystem::CreateSSGIPipelineState() {
     srvTable[3].RegisterSpace = 0;
     srvTable[3].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParameters[2] = {};
+    D3D12_DESCRIPTOR_RANGE uavTable[1] = {};
+    uavTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    uavTable[0].NumDescriptors = 1;
+    uavTable[0].BaseShaderRegister = 0;
+    uavTable[0].RegisterSpace = 0;
+    uavTable[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParameters[3] = {};
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
     rootParameters[0].Descriptor.RegisterSpace = 0;
@@ -355,7 +362,12 @@ void RenderSystem::CreateSSGIPipelineState() {
     rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[1].DescriptorTable.NumDescriptorRanges = 4;
     rootParameters[1].DescriptorTable.pDescriptorRanges = srvTable;
-    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[2].DescriptorTable.pDescriptorRanges = uavTable;
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
@@ -370,14 +382,14 @@ void RenderSystem::CreateSSGIPipelineState() {
     samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
     samplerDesc.ShaderRegister = 0;
     samplerDesc.RegisterSpace = 0;
-    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
-    rootDesc.NumParameters = 2;
+    rootDesc.NumParameters = 3;
     rootDesc.pParameters = rootParameters;
     rootDesc.NumStaticSamplers = 1;
     rootDesc.pStaticSamplers = &samplerDesc;
-    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
     ComPtr<ID3DBlob> sig, err;
     ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
@@ -385,48 +397,14 @@ void RenderSystem::CreateSSGIPipelineState() {
         IID_PPV_ARGS(&m_SSGIRootSignature)));
 
     const std::wstring shaderPath = L"Renderer/Shaders/SSGI.hlsl";
-    ComPtr<ID3DBlob> vs, ps;
-    vs = d3dUtil::CompileShader(shaderPath, nullptr, "VS", "vs_5_0");
-    ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
+    ComPtr<ID3DBlob> cs;
+    cs = d3dUtil::CompileShader(shaderPath, nullptr, "CS", "cs_5_0");
 
-    D3D12_BLEND_DESC blendDesc = {};
-    blendDesc.AlphaToCoverageEnable = FALSE;
-    blendDesc.IndependentBlendEnable = FALSE;
-    blendDesc.RenderTarget[0].BlendEnable = FALSE;
-    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-
-    D3D12_RASTERIZER_DESC rastDesc = {};
-    rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
-    rastDesc.CullMode = D3D12_CULL_MODE_NONE;
-    rastDesc.FrontCounterClockwise = FALSE;
-    rastDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-    rastDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-    rastDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-    rastDesc.DepthClipEnable = FALSE;
-    rastDesc.MultisampleEnable = FALSE;
-    rastDesc.AntialiasedLineEnable = FALSE;
-    rastDesc.ForcedSampleCount = 0;
-    rastDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-
-    D3D12_DEPTH_STENCIL_DESC dsDesc = {};
-    dsDesc.DepthEnable = FALSE;
-    dsDesc.StencilEnable = FALSE;
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    D3D12_COMPUTE_PIPELINE_STATE_DESC pso = {};
     pso.pRootSignature = m_SSGIRootSignature.Get();
-    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
-    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
-    pso.RasterizerState = rastDesc;
-    pso.BlendState = blendDesc;
-    pso.DepthStencilState = dsDesc;
-    pso.SampleMask = UINT_MAX;
-    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    pso.NumRenderTargets = 1;
-    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    pso.DSVFormat = DXGI_FORMAT_UNKNOWN;
-    pso.SampleDesc.Count = 1;
+    pso.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
 
-    ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_SSGIPipelineState)));
+    ThrowIfFailed(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_SSGIPipelineState)));
 }
 
 void RenderSystem::Update(float deltaTime) {
@@ -657,46 +635,55 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
 
-    // Transition SSGI buffer to render target state
+    // Transition SSGI buffer to unordered access state
+    // 첫 프레임에서는 이미 UNORDERED_ACCESS 상태이므로 barrier를 건너뜀
     D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    commandList->ResourceBarrier(1, &barrier);
-
-    // Get SSGI RTV
-    D3D12_CPU_DESCRIPTOR_HANDLE ssgiRTVHandle = m_RendererCore->GetSSGIRTVHandle();
-
-    // Clear SSGI buffer
-    const float clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    commandList->ClearRenderTargetView(ssgiRTVHandle, clearColor, 0, nullptr);
-
-    // Set render target to SSGI buffer
-    commandList->OMSetRenderTargets(1, &ssgiRTVHandle, FALSE, nullptr);
+    if (!m_IsFirstSSGIFrame) {
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList->ResourceBarrier(1, &barrier);
+    }
 
     // Set pipeline state
     commandList->SetPipelineState(m_SSGIPipelineState.Get());
-    commandList->SetGraphicsRootSignature(m_SSGIRootSignature.Get());
+    commandList->SetComputeRootSignature(m_SSGIRootSignature.Get());
 
     // Set pass constant buffer
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
-    commandList->SetGraphicsRootConstantBufferView(0, passCBAddress);
+    commandList->SetComputeRootConstantBufferView(0, passCBAddress);
+
+    // Set descriptor heap (G-Buffer SRV Heap에 모든 descriptor가 포함되어 있음)
+    ID3D12DescriptorHeap* heaps[] = { m_RendererCore->GetGBufferSRVHeap() };
+    commandList->SetDescriptorHeaps(1, heaps);
 
     // Set G-Buffer SRVs
-    ID3D12DescriptorHeap* srvHeaps[] = { m_RendererCore->GetGBufferSRVHeap() };
-    commandList->SetDescriptorHeaps(1, srvHeaps);
     D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
-    commandList->SetGraphicsRootDescriptorTable(1, srvHandle);
+    commandList->SetComputeRootDescriptorTable(1, srvHandle);
 
-    // Draw fullscreen quad
-    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->DrawInstanced(3, 1, 0, 0);
+    // Set SSGI UAV (G-Buffer SRV Heap에서 가져옴)
+    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(2, uavHandle);
+
+    // Dispatch compute shader (8x8 thread groups)
+    uint32_t width = m_RendererCore->GetWidth();
+    uint32_t height = m_RendererCore->GetHeight();
+    uint32_t dispatchX = (width + 7) / 8;
+    uint32_t dispatchY = (height + 7) / 8;
+    commandList->Dispatch(dispatchX, dispatchY, 1);
 
     // Transition SSGI buffer to pixel shader resource state
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &barrier);
+    
+    // 첫 프레임 플래그 해제
+    m_IsFirstSSGIFrame = false;
 }
 
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {
@@ -728,7 +715,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.cbPerObjectPad3 = 0.0f;
     passConstants.cbPerObjectPad4 = XMFLOAT2(0.0f, 0.0f);
     
-    // 기본 방향광 3개 설정 (셰이더가 NUM_DIR_LIGHTS=3을 기대함)
+    // 기본 방향광 4개 설정 (셰이더가 NUM_DIR_LIGHTS=4을 기대함)
     // 첫 번째 라이트: 위에서 아래로
     passConstants.gLights[0].Strength = XMFLOAT3(0.9f, 0.9f, 0.9f);
     passConstants.gLights[0].Direction = XMFLOAT3(0.0f, -1.0f, 0.0f);
@@ -753,8 +740,16 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gLights[2].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
     passConstants.gLights[2].SpotPower = 64.0f;
     
+    // 네 번째 라이트: Z방향 뒤에서 오는 라이트
+    passConstants.gLights[3].Strength = XMFLOAT3(0.4f, 0.4f, 0.4f);
+    passConstants.gLights[3].Direction = XMFLOAT3(0.0f, 0.0f, -1.0f);
+    passConstants.gLights[3].FalloffStart = 1.0f;
+    passConstants.gLights[3].FalloffEnd = 1000.0f;
+    passConstants.gLights[3].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    passConstants.gLights[3].SpotPower = 1.0f;
+    
     // 나머지 라이트는 0으로 초기화
-    for (int i = 3; i < 16; ++i) {
+    for (int i = 4; i < 16; ++i) {
         passConstants.gLights[i].Strength = XMFLOAT3(0.0f, 0.0f, 0.0f);
         passConstants.gLights[i].Direction = XMFLOAT3(0.0f, 0.0f, 0.0f);
         passConstants.gLights[i].FalloffStart = 0.0f;

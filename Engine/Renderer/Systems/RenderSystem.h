@@ -70,6 +70,9 @@ private:
     
     // Render mode
     RenderMode m_RenderMode = RenderMode::Composite;
+    
+    // First frame flag for SSGI barrier
+    bool m_IsFirstSSGIFrame = true;
 
     // Constant buffers
     static const int FrameCount = 2;

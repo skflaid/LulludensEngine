@@ -1,4 +1,4 @@
-// SSGI (Screen Space Global Illumination) Pass Shader
+// SSGI (Screen Space Global Illumination) Compute Shader
 
 cbuffer cbPass : register(b0)
 {
@@ -25,25 +25,10 @@ Texture2D gNormalMap   : register(t1);
 Texture2D gAlbedoMap   : register(t2);
 Texture2D gMaterialMap : register(t3);
 
+// SSGI output
+RWTexture2D<float4> gSSGIOutput : register(u0);
+
 SamplerState gsamPointWrap : register(s0);
-
-struct VertexOut
-{
-    float4 PosH : SV_POSITION;
-    float2 TexC : TEXCOORD;
-};
-
-// Fullscreen quad vertices
-VertexOut VS(uint vertexID : SV_VertexID)
-{
-    VertexOut vout;
-
-    // Generate fullscreen triangle
-    vout.TexC = float2((vertexID << 1) & 2, vertexID & 2);
-    vout.PosH = float4(vout.TexC.x * 2.0f - 1.0f, -(vout.TexC.y * 2.0f - 1.0f), 0.0f, 1.0f);
-
-    return vout;
-}
 
 // SSGI 파라미터
 static const float SSGI_RAY_STEP = 0.1f;
@@ -121,10 +106,12 @@ float3 TraceSSGI(float3 pos, float3 normal, float2 uv, float3 albedo)
             if (sampleUV.x < 0.0f || sampleUV.x > 1.0f || sampleUV.y < 0.0f || sampleUV.y > 1.0f)
                 break;
             
-            // G-Buffer에서 샘플링
-            float4 samplePos = gPositionMap.Sample(gsamPointWrap, sampleUV);
-            float4 sampleNormalEncoded = gNormalMap.Sample(gsamPointWrap, sampleUV);
-            float4 sampleAlbedo = gAlbedoMap.Sample(gsamPointWrap, sampleUV);
+            // G-Buffer에서 샘플링 (Compute Shader에서는 Load 사용)
+            int2 sampleCoord = int2(sampleUV * gRenderTargetSize);
+            sampleCoord = clamp(sampleCoord, int2(0, 0), int2(gRenderTargetSize) - 1);
+            float4 samplePos = gPositionMap.Load(int3(sampleCoord, 0));
+            float4 sampleNormalEncoded = gNormalMap.Load(int3(sampleCoord, 0));
+            float4 sampleAlbedo = gAlbedoMap.Load(int3(sampleCoord, 0));
             
             // 노말 디코딩
             float3 sampleNormal = normalize(sampleNormalEncoded.rgb * 2.0f - 1.0f);
@@ -159,13 +146,22 @@ float3 TraceSSGI(float3 pos, float3 normal, float2 uv, float3 albedo)
     return gi * SSGI_INTENSITY;
 }
 
-float4 PS(VertexOut pin) : SV_Target
+[numthreads(8, 8, 1)]
+void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-    // G-Buffer 샘플링
-    float4 position = gPositionMap.Sample(gsamPointWrap, pin.TexC);
-    float4 normalEncoded = gNormalMap.Sample(gsamPointWrap, pin.TexC);
-    float4 albedo = gAlbedoMap.Sample(gsamPointWrap, pin.TexC);
-    float4 material = gMaterialMap.Sample(gsamPointWrap, pin.TexC);
+    // 화면 크기 체크
+    if (dispatchThreadID.x >= (uint)gRenderTargetSize.x || dispatchThreadID.y >= (uint)gRenderTargetSize.y)
+        return;
+    
+    // 픽셀 좌표를 UV 좌표로 변환
+    float2 texC = (dispatchThreadID.xy + 0.5f) * gInvRenderTargetSize;
+    
+    // G-Buffer 샘플링 (Compute Shader에서는 Load 사용)
+    int2 texCoord = int2(dispatchThreadID.xy);
+    float4 position = gPositionMap.Load(int3(texCoord, 0));
+    float4 normalEncoded = gNormalMap.Load(int3(texCoord, 0));
+    float4 albedo = gAlbedoMap.Load(int3(texCoord, 0));
+    float4 material = gMaterialMap.Load(int3(texCoord, 0));
     
     // 노말 디코딩
     float3 normalW = normalize(normalEncoded.rgb * 2.0f - 1.0f);
@@ -173,11 +169,15 @@ float4 PS(VertexOut pin) : SV_Target
     
     // 배경이면 SSGI 계산하지 않음
     if (position.w < 0.001f)
-        return float4(0.0f, 0.0f, 0.0f, 0.0f);
+    {
+        gSSGIOutput[dispatchThreadID.xy] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
     
     // SSGI 계산
-    float3 ssgi = TraceSSGI(posW, normalW, pin.TexC, albedo.rgb);
+    float3 ssgi = TraceSSGI(posW, normalW, texC, albedo.rgb);
     
-    return float4(ssgi, 1.0f);
+    // 결과 출력
+    gSSGIOutput[dispatchThreadID.xy] = float4(ssgi, 1.0f);
 }
 
