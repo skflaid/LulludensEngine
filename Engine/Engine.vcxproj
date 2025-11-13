@@ -138,26 +138,26 @@
     <ClInclude Include="..\Common\UploadBuffer.h" />
     <ClInclude Include="App\EntityInspector.h" />
     <ClInclude Include="App\GameEngine.h" />
+    <ClInclude Include="Core\Entity.h" />
     <ClInclude Include="Core\FBXLoader.h" />
+    <ClInclude Include="Core\IComponent.h" />
+    <ClInclude Include="Core\ISystem.h" />
     <ClInclude Include="Core\ModelInstantiation.h" />
     <ClInclude Include="Core\ResourceManager.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
-    <ClInclude Include="Physics\Systems\CollisionSystem.h" />
-    <ClInclude Include="Core\Entity.h" />
-    <ClInclude Include="Core\IComponent.h" />
-    <ClInclude Include="Core\ISystem.h" />
-    <ClInclude Include="Physics\Systems\DynamicsSystem.h" />
-    <ClInclude Include="Common\Game.h" />
+    <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
+    <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
     <ClInclude Include="Physics\PhysicsScheduler.h" />
     <ClInclude Include="Physics\PhysicsWorld.h" />
+    <ClInclude Include="Physics\Systems\CollisionSystem.h" />
+    <ClInclude Include="Physics\Systems\DynamicsSystem.h" />
     <ClInclude Include="Renderer\Components\MaterialComponent.h" />
     <ClInclude Include="Renderer\Components\MeshComponent.h" />
     <ClInclude Include="Renderer\Components\TransformComponent.h" />
     <ClInclude Include="Renderer\Model.h" />
     <ClInclude Include="Renderer\RendererCore.h" />
+    <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
-    <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
-    <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\Camera.cpp" />
@@ -185,20 +185,18 @@
     <Text Include="Models\skull.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Renderer\Shaders\default.hlsl" />
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="Renderer\Shaders\LightingUtil.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Geometry</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Geometry</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Geometry</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Geometry</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </FxCompile>
+    <None Include="Renderer\Shaders\default.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="Renderer\Shaders\GBuffer.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="Renderer\Shaders\Lighting.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="Renderer\Shaders\LightingUtil.hlsl">
+      <FileType>Document</FileType>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
