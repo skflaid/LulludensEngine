@@ -144,6 +144,7 @@
     <ClInclude Include="Core\ISystem.h" />
     <ClInclude Include="Core\ModelInstantiation.h" />
     <ClInclude Include="Core\ResourceManager.h" />
+    <ClInclude Include="Core\InputManager.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
     <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
     <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
@@ -151,11 +152,13 @@
     <ClInclude Include="Physics\PhysicsWorld.h" />
     <ClInclude Include="Physics\Systems\CollisionSystem.h" />
     <ClInclude Include="Physics\Systems\DynamicsSystem.h" />
+    <ClInclude Include="Renderer\Components\CameraComponent.h" />
     <ClInclude Include="Renderer\Components\MaterialComponent.h" />
     <ClInclude Include="Renderer\Components\MeshComponent.h" />
     <ClInclude Include="Renderer\Components\TransformComponent.h" />
     <ClInclude Include="Renderer\Model.h" />
     <ClInclude Include="Renderer\RendererCore.h" />
+    <ClInclude Include="Renderer\Systems\CameraSystem.h" />
     <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
   </ItemGroup>
@@ -172,12 +175,14 @@
     <ClCompile Include="App\MainApp.cpp" />
     <ClCompile Include="Core\FBXLoader.cpp" />
     <ClCompile Include="Core\ModelInstantiation.cpp" />
+    <ClCompile Include="Core\InputManager.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
     <ClCompile Include="Physics\Systems\DynamicsSystem.cpp" />
     <ClCompile Include="Renderer\Components\MeshComponent.cpp" />
     <ClCompile Include="Renderer\RendererCore.cpp" />
+    <ClCompile Include="Renderer\Systems\CameraSystem.cpp" />
     <ClCompile Include="Renderer\Systems\RenderSystem.cpp" />
   </ItemGroup>
   <ItemGroup>

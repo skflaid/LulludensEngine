@@ -3,12 +3,14 @@
 #include "Core/ISystem.h"
 #include "Core/Entity.h"
 #include "Renderer/RendererCore.h"
-#include "RenderConstants.h"  // 추가
+#include "RenderConstants.h"
 #include <vector>
 #include <memory>
 #include <DirectXMath.h>
 
 using namespace DirectX;
+
+class GameEngine;
 
 enum class RenderMode {
     Composite,  // Lighting + SSGI
@@ -18,12 +20,15 @@ enum class RenderMode {
 
 class RenderSystem : public ISystem {
 public:
-    RenderSystem(HWND hwnd, uint32_t width, uint32_t height);
+    RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32_t height);
     ~RenderSystem();
 
     void Initialize() override;
     void Update(float deltaTime) override;
     void Shutdown() override;
+
+    uint32_t GetWidth() const { return m_Width; }
+    uint32_t GetHeight() const { return m_Height; }
 
     const char* GetName() const override { return "RenderSystem"; }
 
@@ -46,6 +51,8 @@ private:
     void CreateConstantBuffer();
 
 private:
+    GameEngine* m_Engine = nullptr; // GameEngine 포인터 멤버
+
     std::unique_ptr<RendererCore> m_RendererCore;
     std::vector<Entity*> m_RenderableEntities;
     HWND m_Hwnd;

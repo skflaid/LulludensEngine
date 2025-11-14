@@ -12,6 +12,9 @@
 #include "Renderer/Components/MaterialComponent.h"
 #include "Core/FBXLoader.h"
 #include "Core/ModelInstantiation.h"
+#include "Core/InputManager.h" 
+#include "Renderer/Systems/CameraSystem.h" 
+#include "Renderer/Components/CameraComponent.h" 
 // Model.h는 FBXLoader.h에서 이미 포함되므로 여기서는 제거
 
 GameEngine::GameEngine() = default;
@@ -33,8 +36,13 @@ bool GameEngine::Initialize(HWND hwnd, uint32_t width, uint32_t height)
     m_PhysicsWorld->AddSystem(std::move(collisionSystem));
 
     m_PhysicsScheduler = std::make_unique<PhysicsScheduler>(m_PhysicsWorld);
-    m_RenderSystem = std::make_unique<RenderSystem>(hwnd, width, height);
+    m_RenderSystem = std::make_unique<RenderSystem>(this, hwnd, width, height);
     m_RenderSystem->Initialize();
+
+    // CameraSystem 생성 및 초기화
+    m_CameraSystem = std::make_unique<CameraSystem>();
+    m_CameraSystem->Initialize(); 
+    m_CameraSystem->SetGameEngine(this); 
 
     CreateEntities();
     return true;
@@ -42,6 +50,9 @@ bool GameEngine::Initialize(HWND hwnd, uint32_t width, uint32_t height)
 
 void GameEngine::Update(float deltaTime)
 {
+    InputManager::Get()->Update();
+
+    if (m_CameraSystem) m_CameraSystem->Update(deltaTime);
     if (m_PhysicsScheduler) m_PhysicsScheduler->Update(deltaTime);
     if (m_RenderSystem)     m_RenderSystem->Update(deltaTime);
 }
@@ -63,6 +74,10 @@ void GameEngine::Shutdown()
     m_Entities.clear();
 }
 
+//카메라 관련 함수
+void GameEngine::SetMainCamera(Entity* camera) { m_MainCamera = camera; }
+Entity* GameEngine::GetMainCamera() const { return m_MainCamera; }
+
 uint64_t GameEngine::GetEntityCount() const
 {
     return static_cast<uint64_t>(m_Entities.size());
@@ -76,6 +91,22 @@ Entity* GameEngine::GetEntityByIndex(uint64_t index)
 
 void GameEngine::CreateEntities()
 {
+    // ======== 메인 카메라 생성 ========
+    auto cameraEntity = std::make_unique<Entity>(4); // ID 0번으로 카메라 생성
+    cameraEntity->AddComponent<TransformComponent>();
+    auto cameraComp = cameraEntity->AddComponent<CameraComponent>();
+
+    // RenderSystem으로부터 화면 너비와 높이를 가져옵니다.
+    float width = static_cast<float>(m_RenderSystem->GetWidth());
+    float height = static_cast<float>(m_RenderSystem->GetHeight());
+
+    // 투영 행렬을 생성합니다.
+    XMMATRIX P = XMMatrixPerspectiveFovLH(XM_PIDIV4, width / height, 0.1f, 1000.0f);
+    XMStoreFloat4x4(&cameraComp->ProjMatrix, P);
+
+    SetMainCamera(cameraEntity.get()); // 메인 카메라로 등록
+    m_Entities.push_back(std::move(cameraEntity));
+
     // Cube
     auto cube = std::make_unique<Entity>(1);
     auto t = cube->AddComponent<TransformComponent>();

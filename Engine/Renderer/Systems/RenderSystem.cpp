@@ -1,15 +1,16 @@
-// Renderer/Systems/RenderSystem.cpp
+#include "App/GameEngine.h"
 #include "RenderSystem.h"
 #include "../Components/TransformComponent.h"
 #include "../Components/MeshComponent.h"
 #include "../Components/MaterialComponent.h"
 #include "../Common/d3dUtil.h"
+#include "Renderer/Components/CameraComponent.h"
 #include <d3dcompiler.h>
 
 #pragma comment(lib, "d3dcompiler.lib")
 
-RenderSystem::RenderSystem(HWND hwnd, uint32_t width, uint32_t height)
-    : m_Hwnd(hwnd), m_Width(width), m_Height(height), 
+RenderSystem::RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32_t height)
+    : m_Engine(engine), m_Hwnd(hwnd), m_Width(width), m_Height(height),
       m_ObjectConstantBufferSize(0), m_MaterialConstantBufferSize(0), m_PassConstantBufferSize(0) {
     for (int i = 0; i < FrameCount; ++i) {
         m_ObjectConstantBufferDataBegin[i] = nullptr;
@@ -27,7 +28,7 @@ void RenderSystem::Initialize() {
     if (!m_RendererCore->Initialize(m_Hwnd, m_Width, m_Height)) {
         return;
     }
-
+    /*
     // 카메라(뷰) 행렬 설정
     XMVECTOR eye = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);  // 카메라 위치
     XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);    // 바라보는 지점
@@ -38,7 +39,7 @@ void RenderSystem::Initialize() {
     float fov = XM_PIDIV4; // 45도
     float aspectRatio = static_cast<float>(m_Width) / static_cast<float>(m_Height);
     XMStoreFloat4x4(&m_ProjMatrix, XMMatrixPerspectiveFovLH(fov, aspectRatio, 0.1f, 100.0f));
-
+    */
     CreateConstantBuffer();
     CreateGBufferPipelineState();
     CreateLightingPipelineState();
@@ -689,8 +690,19 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     PassConstants passConstants = {};
     
-    XMMATRIX V = XMLoadFloat4x4(&m_ViewMatrix);
-    XMMATRIX P = XMLoadFloat4x4(&m_ProjMatrix);
+    // GameEngine에서 메인 카메라를 가져옵니다.
+    Entity* mainCamera = m_Engine->GetMainCamera();
+    if (!mainCamera) {
+        // 카메라가 없으면 렌더링 중단 (또는 기본 행렬 사용)
+        return;
+    }    
+    
+    auto cameraComp = mainCamera->GetComponent<CameraComponent>();
+    if (!cameraComp) return;
+
+    // RenderSystem의 멤버 변수 대신, CameraComponent의 행렬을 직접 가져옵니다.
+    XMMATRIX V = XMLoadFloat4x4(&cameraComp->ViewMatrix);
+    XMMATRIX P = XMLoadFloat4x4(&cameraComp->ProjMatrix);
     XMMATRIX VP = XMMatrixMultiply(V, P);
     
     XMStoreFloat4x4(&passConstants.gView, XMMatrixTranspose(V));

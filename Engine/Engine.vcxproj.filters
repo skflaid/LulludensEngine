@@ -162,6 +162,15 @@
     <ClInclude Include="..\Common\UploadBuffer.h">
       <Filter>Common</Filter>
     </ClInclude>
+    <ClInclude Include="Core\InputManager.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\CameraSystem.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\CameraComponent.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="App\EntityInspector.cpp">
@@ -220,6 +229,12 @@
     </ClCompile>
     <ClCompile Include="..\Common\MathHelper.cpp">
       <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\InputManager.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Systems\CameraSystem.cpp">
+      <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
