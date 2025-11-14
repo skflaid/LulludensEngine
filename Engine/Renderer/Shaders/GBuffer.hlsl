@@ -88,13 +88,13 @@ GBufferOut PS(VertexOut pin)
     // Position (World space)
     gbuffer.Position = float4(pin.PosW, 1.0f);
 
-    // Normal (World space, encoded as 0.5 * normal + 0.5 for storage)
+    // Normal
     gbuffer.Normal = float4(pin.NormalW * 0.5f + 0.5f, 1.0f);
 
     // Albedo
     gbuffer.Albedo = gDiffuseAlbedo;
 
-    // Material properties (Roughness, Metallic, FresnelR0.x, unused)
+    // Material properties
     gbuffer.Material = float4(gRoughness, 0.0f, gFresnelR0.x, 1.0f);
 
     return gbuffer;

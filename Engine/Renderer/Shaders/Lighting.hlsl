@@ -102,7 +102,7 @@ float4 PS(VertexOut pin) : SV_Target
 
     // SSGI 샘플링
     float4 ssgi = gSSGIMap.Sample(gsamPointWrap, pin.TexC);
-    float3 ssgiContribution = ssgi.rgb * albedo.rgb;
+    float3 ssgiContribution = ssgi.rgb;
 
     // 모드에 따라 다른 결과 반환
     float4 litColor;

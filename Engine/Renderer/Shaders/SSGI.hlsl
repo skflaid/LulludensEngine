@@ -31,15 +31,15 @@ RWTexture2D<float4> gSSGIOutput : register(u0);
 SamplerState gsamPointWrap : register(s0);
 
 // SSGI 파라미터
-static const float SSGI_RAY_STEP = 0.1f;
-static const float SSGI_MAX_DISTANCE = 2.0f;
-static const int SSGI_NUM_SAMPLES = 8;
-static const float SSGI_INTENSITY = 0.5f;
+static const float SSGI_RAY_STEP = 0.3f;
+static const float SSGI_MAX_DISTANCE = 6.0f;
+static const int SSGI_NUM_SAMPLES = 32;
+static const float SSGI_INTENSITY = 0.7f;
 
 // 화면 공간에서 랜덤 방향 벡터 생성
 float3 GetRandomDirection(float2 uv, float3 normal)
 {
-    // 간단한 해시 함수로 랜덤 방향 생성
+    // 해시 함수로 랜덤 방향 생성
     float3 random = float3(
         frac(sin(dot(uv, float2(12.9898f, 78.233f))) * 43758.5453f),
         frac(sin(dot(uv, float2(23.1407f, 2.6651f))) * 43758.5453f),
@@ -155,7 +155,7 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     
     // 픽셀 좌표를 UV 좌표로 변환
     float2 texC = (dispatchThreadID.xy + 0.5f) * gInvRenderTargetSize;
-    
+
     // G-Buffer 샘플링 (Compute Shader에서는 Load 사용)
     int2 texCoord = int2(dispatchThreadID.xy);
     float4 position = gPositionMap.Load(int3(texCoord, 0));
