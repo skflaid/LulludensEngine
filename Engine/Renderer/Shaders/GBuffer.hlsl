@@ -1,4 +1,5 @@
 // G-Buffer Pass Shader for Deferred Rendering
+#include "LightingUtil.hlsl"
 
 cbuffer cbPerObject : register(b0)
 {
@@ -22,6 +23,12 @@ cbuffer cbPass : register(b2)
     float4x4 gInvProj;
     float4x4 gViewProj;
     float4x4 gInvViewProj;
+
+    float4x4 gShadowView;
+    float4x4 gShadowProj;
+    float4x4 gShadowViewProj;
+    float4x4 gShadowTransform;
+
     float3 gEyePosW;
     float cbPerObjectPad1;
     float2 gRenderTargetSize;
@@ -31,6 +38,12 @@ cbuffer cbPass : register(b2)
     float gTotalTime;
     float gDeltaTime;
     float4 gAmbientLight;
+
+    // GBuffer에선 안 쓰더라도 필드는 둠
+    Light  gLights[16];   // 또는 LightingUtil.hlsl 의 Light와 동일 구조면 Light gLights[16];
+    int   gRenderMode;
+    float cbPerObjectPad3;
+    float2 cbPerObjectPad4;
 };
 
 struct VertexIn

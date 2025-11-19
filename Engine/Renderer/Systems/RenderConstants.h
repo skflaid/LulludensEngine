@@ -35,6 +35,12 @@ struct PassConstants {
     XMFLOAT4X4 gInvProj;
     XMFLOAT4X4 gViewProj;
     XMFLOAT4X4 gInvViewProj;
+
+    XMFLOAT4X4 gShadowView;
+    XMFLOAT4X4 gShadowProj;
+    XMFLOAT4X4 gShadowViewProj;
+    XMFLOAT4X4 gShadowTransform;
+    
     XMFLOAT3 gEyePosW;
     float cbPerObjectPad1;
     XMFLOAT2 gRenderTargetSize;
@@ -44,6 +50,7 @@ struct PassConstants {
     float gTotalTime;
     float gDeltaTime;
     XMFLOAT4 gAmbientLight;
+
     PassLight gLights[16];
     int gRenderMode;
     float cbPerObjectPad3;

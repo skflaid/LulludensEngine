@@ -28,6 +28,7 @@ void RenderSystem::Initialize() {
     if (!m_RendererCore->Initialize(m_Hwnd, m_Width, m_Height)) {
         return;
     }
+
     /*
     // 카메라(뷰) 행렬 설정
     XMVECTOR eye = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);  // 카메라 위치
@@ -40,8 +41,11 @@ void RenderSystem::Initialize() {
     float aspectRatio = static_cast<float>(m_Width) / static_cast<float>(m_Height);
     XMStoreFloat4x4(&m_ProjMatrix, XMMatrixPerspectiveFovLH(fov, aspectRatio, 0.1f, 100.0f));
     */
+
     CreateConstantBuffer();
+    CreateShadowResources();
     CreateGBufferPipelineState();
+    CreateShadowPipelineState();
     CreateLightingPipelineState();
     CreateSSGIPipelineState();
 }
@@ -204,7 +208,7 @@ void RenderSystem::CreateLightingPipelineState() {
     auto device = m_RendererCore->GetDevice();
 
     // Root Signature (CBV b0 for Pass constants, DescriptorTable for G-Buffer SRVs + SSGI SRV)
-    D3D12_DESCRIPTOR_RANGE srvTable[5] = {};
+    D3D12_DESCRIPTOR_RANGE srvTable[6] = {};
     srvTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     srvTable[0].NumDescriptors = 1;
     srvTable[0].BaseShaderRegister = 0;
@@ -235,6 +239,12 @@ void RenderSystem::CreateLightingPipelineState() {
     srvTable[4].RegisterSpace = 0;
     srvTable[4].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
+    srvTable[5].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable[5].NumDescriptors = 1;
+    srvTable[5].BaseShaderRegister = 5;
+    srvTable[5].RegisterSpace = 0;
+    srvTable[5].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
     D3D12_ROOT_PARAMETER rootParameters[2] = {};
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
@@ -242,30 +252,39 @@ void RenderSystem::CreateLightingPipelineState() {
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameters[1].DescriptorTable.NumDescriptorRanges = 5;
+    rootParameters[1].DescriptorTable.NumDescriptorRanges = 6;
     rootParameters[1].DescriptorTable.pDescriptorRanges = srvTable;
     rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
-    samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-    samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    samplerDesc.MipLODBias = 0;
-    samplerDesc.MaxAnisotropy = 0;
-    samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-    samplerDesc.MinLOD = 0.0f;
-    samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
-    samplerDesc.ShaderRegister = 0;
-    samplerDesc.RegisterSpace = 0;
-    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
+    // s0 : 기존 GBuffer/SSGI용 포인트 샘플러
+    samplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    samplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplers[0].ShaderRegister = 0;
+    samplers[0].RegisterSpace = 0;
+    samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // s1 : ShadowMap용 비교 샘플러
+    samplers[1].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    samplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    samplers[1].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+    samplers[1].MinLOD = 0.0f;
+    samplers[1].MaxLOD = D3D12_FLOAT32_MAX;
+    samplers[1].ShaderRegister = 1;
+    samplers[1].RegisterSpace = 0;
+    samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
     rootDesc.NumParameters = 2;
     rootDesc.pParameters = rootParameters;
-    rootDesc.NumStaticSamplers = 1;
-    rootDesc.pStaticSamplers = &samplerDesc;
+    rootDesc.NumStaticSamplers = 2;              // ★ 2개
+    rootDesc.pStaticSamplers = samplers;
     rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ComPtr<ID3DBlob> sig, err;
@@ -408,6 +427,148 @@ void RenderSystem::CreateSSGIPipelineState() {
     ThrowIfFailed(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_SSGIPipelineState)));
 }
 
+void RenderSystem::CreateShadowResources() {
+    auto device = m_RendererCore->GetDevice();
+
+    // Shadow depth 텍스처 리소스 생성 (R24G8 typeless)
+    D3D12_RESOURCE_DESC texDesc = {};
+    texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    texDesc.Alignment = 0;
+    texDesc.Width = m_ShadowMapSize;
+    texDesc.Height = m_ShadowMapSize;
+    texDesc.DepthOrArraySize = 1;
+    texDesc.MipLevels = 1;
+    texDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.SampleDesc.Quality = 0;
+    texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE optClear = {};
+    optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    optClear.DepthStencil.Depth = 1.0f;
+    optClear.DepthStencil.Stencil = 0;
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heapProps.CreationNodeMask = 1;
+    heapProps.VisibleNodeMask = 1;
+
+    ThrowIfFailed(device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &texDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,    // 나중에 DEPTH_WRITE ↔ GENERIC_READ 전환
+        &optClear,
+        IID_PPV_ARGS(&m_ShadowMap)));
+
+    // DSV heap 1개짜리
+    D3D12_DESCRIPTOR_HEAP_DESC dsvDesc = {};
+    dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvDesc.NumDescriptors = 1;
+    dsvDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&dsvDesc, IID_PPV_ARGS(&m_ShadowDsvHeap)));
+
+    m_ShadowDsv = m_ShadowDsvHeap->GetCPUDescriptorHandleForHeapStart();
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvView = {};
+    dsvView.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dsvView.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvView.Flags = D3D12_DSV_FLAG_NONE;
+    dsvView.Texture2D.MipSlice = 0;
+
+    device->CreateDepthStencilView(m_ShadowMap.Get(), &dsvView, m_ShadowDsv);
+
+    // Shadow viewport / scissor
+    m_ShadowViewport.TopLeftX = 0.0f;
+    m_ShadowViewport.TopLeftY = 0.0f;
+    m_ShadowViewport.Width = static_cast<float>(m_ShadowMapSize);
+    m_ShadowViewport.Height = static_cast<float>(m_ShadowMapSize);
+    m_ShadowViewport.MinDepth = 0.0f;
+    m_ShadowViewport.MaxDepth = 1.0f;
+
+    m_ShadowScissorRect.left = 0;
+    m_ShadowScissorRect.top = 0;
+    m_ShadowScissorRect.right = static_cast<LONG>(m_ShadowMapSize);
+    m_ShadowScissorRect.bottom = static_cast<LONG>(m_ShadowMapSize);
+
+    // ★ SRV는 G-Buffer SRV Heap 안에서 RendererCore가 만들어줘야 함
+    // DXGI_FORMAT_R24_UNORM_X8_TYPELESS 포맷으로 SRV 생성해서 Lighting.hlsl t5에 바인딩.
+
+    // ShadowMap SRV: DSV는 D24_UNORM_S8_UINT, SRV는 R24_UNORM_X8_TYPELESS 로 만들어야 함.
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+
+    // GBuffer SRV heap의 t5 자리에 생성 (Position=t0, Normal=t1, Albedo=t2, Material=t3, SSGI=t4, Shadow=t5)
+    auto shadowSrvHandle = m_RendererCore->GetGBufferSRVHandle(5);
+    device->CreateShaderResourceView(m_ShadowMap.Get(), &srvDesc, shadowSrvHandle);
+}
+
+void RenderSystem::CreateShadowPipelineState() {
+    auto device = m_RendererCore->GetDevice();
+
+    const std::wstring shaderPath = L"Renderer/Shaders/ShadowMap.hlsl";
+    ComPtr<ID3DBlob> vs, ps;
+    vs = d3dUtil::CompileShader(shaderPath, nullptr, "VS", "vs_5_0");
+    ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
+
+    // GBuffer와 동일한 인풋 레이아웃
+    D3D12_INPUT_ELEMENT_DESC inputElements[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+
+    D3D12_RASTERIZER_DESC rastDesc = {};
+    rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
+    rastDesc.CullMode = D3D12_CULL_MODE_BACK;
+    rastDesc.FrontCounterClockwise = FALSE;
+    rastDesc.DepthBias = 100000;              // ★ depth bias
+    rastDesc.DepthBiasClamp = 0.0f;
+    rastDesc.SlopeScaledDepthBias = 1.0f;
+    rastDesc.DepthClipEnable = TRUE;
+    rastDesc.MultisampleEnable = FALSE;
+    rastDesc.AntialiasedLineEnable = FALSE;
+    rastDesc.ForcedSampleCount = 0;
+    rastDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+    D3D12_DEPTH_STENCIL_DESC dsDesc = {};
+    dsDesc.DepthEnable = TRUE;
+    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    dsDesc.StencilEnable = FALSE;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    pso.InputLayout = { inputElements, _countof(inputElements) };
+    pso.pRootSignature = m_GBufferRootSignature.Get();         // ★ GBuffer rootSig 재사용
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.RasterizerState = rastDesc;
+    pso.BlendState = blendDesc;
+    pso.DepthStencilState = dsDesc;
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+    pso.NumRenderTargets = 0;                                // ★ 컬러 RT 없음
+    pso.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+    pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;           // CreateShadowResources와 맞춰야 함
+    pso.SampleDesc.Count = 1;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_ShadowPipelineState)));
+}
+
+
 void RenderSystem::Update(float deltaTime) {
     m_TotalTime += deltaTime;
 }
@@ -491,6 +652,8 @@ void RenderSystem::Render() {
     UINT frameIndex = 0;
     UpdatePassConstants(frameIndex);
 
+    RenderShadowPass(frameIndex);
+
     // G-Buffer Pass
     RenderGBufferPass(frameIndex);
 
@@ -504,9 +667,67 @@ void RenderSystem::Render() {
     m_RendererCore->Present();
 }
 
+void RenderSystem::RenderShadowPass(UINT frameIndex) {
+    auto commandList = m_RendererCore->GetCommandList();
+
+    // Shadow viewport & scissor
+    commandList->RSSetViewports(1, &m_ShadowViewport);
+    commandList->RSSetScissorRects(1, &m_ShadowScissorRect);
+
+    // Shadow map을 DEPTH_WRITE 상태로
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = m_ShadowMap.Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_GENERIC_READ;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &barrier);
+
+    // 깊이만 클리어
+    commandList->ClearDepthStencilView(m_ShadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    commandList->OMSetRenderTargets(0, nullptr, FALSE, &m_ShadowDsv);
+
+    commandList->SetPipelineState(m_ShadowPipelineState.Get());
+    commandList->SetGraphicsRootSignature(m_GBufferRootSignature.Get());
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    int objectIndex = 0;
+    for (Entity* entity : m_RenderableEntities) {
+        if (entity && entity->IsActive()) {
+            // Object/Material/Pass CBV 셋업 + draw
+            RenderEntity(entity, frameIndex, objectIndex);
+            ++objectIndex;
+        }
+    }
+
+    // 다시 샘플링용 상태로
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+    commandList->ResourceBarrier(1, &barrier);
+}
+
+
 void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
+
+    // ShadowPass에서 바뀐 뷰포트/시저를 메인 화면 기준으로 복원
+    D3D12_VIEWPORT mainViewport = {};
+    mainViewport.TopLeftX = 0.0f;
+    mainViewport.TopLeftY = 0.0f;
+    mainViewport.Width = static_cast<float>(m_Width);
+    mainViewport.Height = static_cast<float>(m_Height);
+    mainViewport.MinDepth = 0.0f;
+    mainViewport.MaxDepth = 1.0f;
+
+    D3D12_RECT mainScissor = {};
+    mainScissor.left = 0;
+    mainScissor.top = 0;
+    mainScissor.right = static_cast<LONG>(m_Width);
+    mainScissor.bottom = static_cast<LONG>(m_Height);
+
+    commandList->RSSetViewports(1, &mainViewport);
+    commandList->RSSetScissorRects(1, &mainScissor);
 
     // Transition G-Buffer to render target state
     D3D12_RESOURCE_BARRIER barriers[4] = {};
@@ -712,6 +933,57 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     XMStoreFloat4x4(&passConstants.gViewProj, XMMatrixTranspose(VP));
     XMStoreFloat4x4(&passConstants.gInvViewProj, XMMatrixTranspose(XMMatrixInverse(nullptr, VP)));
     
+    // === 여기부터 라이트 기준 Shadow 행렬 계산 ===
+    // 1) 방향광 0번의 방향 사용
+    XMVECTOR lightDir = XMVector3Normalize(
+        XMLoadFloat3(&passConstants.gLights[0].Direction)
+    );
+
+    // 혹시 0벡터면 기본 방향 사용
+    if (XMVector3Less(XMVector3LengthSq(lightDir), XMVectorReplicate(0.001f)))
+    {
+        lightDir = XMVectorSet(0.577f, -0.577f, 0.577f, 0.0f);
+    }
+
+    // 2) 섀도우가 비출 타겟 위치 (일단 월드 원점 근처로)
+    XMVECTOR targetPos = XMVectorZero();
+
+    // 라이트 위치 = 타겟 - dir * distance
+    const float lightDist = 50.0f; // 씬 규모 보고 적당히 조절
+    XMVECTOR lightPos = XMVectorMultiplyAdd(
+        XMVectorReplicate(-lightDist),
+        lightDir,
+        targetPos
+    );
+
+    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+    XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, up);
+
+    // 3) 직교 프로젝션 (섀도우 범위)
+    float l = -50.0f, r = 50.0f;
+    float b = -50.0f, t = 50.0f;
+    float n = 1.0f, f = 150.0f;
+    XMMATRIX lightProj = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
+
+    XMMATRIX lightViewProj = lightView * lightProj;
+
+    XMStoreFloat4x4(&passConstants.gShadowView, XMMatrixTranspose(lightView));
+    XMStoreFloat4x4(&passConstants.gShadowProj, XMMatrixTranspose(lightProj));
+    XMStoreFloat4x4(&passConstants.gShadowViewProj, XMMatrixTranspose(lightViewProj));
+
+    // 4) NDC(-1~1) → 텍스처(0~1) 변환 행렬
+    XMMATRIX T(
+        0.5f, 0.0f, 0.0f, 0.0f,
+        0.0f, -0.5f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f, 1.0f
+    );
+
+    XMMATRIX shadowTransform = lightViewProj * T;
+    XMStoreFloat4x4(&passConstants.gShadowTransform,
+        XMMatrixTranspose(shadowTransform));
+
     // Eye position
     XMMATRIX invV = XMMatrixInverse(nullptr, V);
     XMStoreFloat3(&passConstants.gEyePosW, invV.r[3]);
@@ -769,7 +1041,10 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
         passConstants.gLights[i].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
         passConstants.gLights[i].SpotPower = 0.0f;
     }
-    
+
+
+
+    // 마지막에 memcpy 그대로 유지
     memcpy(m_PassConstantBufferDataBegin[frameIndex], &passConstants, sizeof(PassConstants));
 }
 

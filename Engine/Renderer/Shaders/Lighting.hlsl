@@ -23,6 +23,12 @@ cbuffer cbPass : register(b0)
     float4x4 gInvProj;
     float4x4 gViewProj;
     float4x4 gInvViewProj;
+
+    float4x4 gShadowView;
+    float4x4 gShadowProj;
+    float4x4 gShadowViewProj;
+    float4x4 gShadowTransform;
+
     float3 gEyePosW;
     float cbPerObjectPad1;
     float2 gRenderTargetSize;
@@ -32,6 +38,7 @@ cbuffer cbPass : register(b0)
     float gTotalTime;
     float gDeltaTime;
     float4 gAmbientLight;
+
     Light gLights[MaxLights];
     int gRenderMode;  // 0: Composite, 1: Lighting, 2: SSGI
     float cbPerObjectPad3;
@@ -45,7 +52,52 @@ Texture2D gAlbedoMap   : register(t2);
 Texture2D gMaterialMap : register(t3);
 Texture2D gSSGIMap     : register(t4);
 
+// ShadowMap SRV (RendererCore에서 t5에 바인딩)
+Texture2D gShadowMap : register(t5);
+
 SamplerState gsamPointWrap : register(s0);
+SamplerComparisonState gsamShadow : register(s1); // RootSignature에서 static sampler 추가
+
+float CalcShadowFactor(float3 posW)
+{
+    // world → shadow texture space
+    float4 shadowPosH = mul(float4(posW, 1.0f), gShadowTransform);
+
+    // homogeneous divide
+    shadowPosH.xyz /= shadowPosH.w;
+
+    // shadow map UV 범위 밖이면 그림자 없음(밝게)
+    if (shadowPosH.x < 0.0f || shadowPosH.x > 1.0f ||
+        shadowPosH.y < 0.0f || shadowPosH.y > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    float depth = shadowPosH.z;
+
+    // 간단 3x3 PCF
+    uint width, height, levels;
+    gShadowMap.GetDimensions(0, width, height, levels);
+    float dx = 1.0f / (float)width;
+
+    float2 offsets[9] = {
+        float2(-dx, -dx), float2(0, -dx), float2(+dx, -dx),
+        float2(-dx,  0), float2(0,  0),   float2(+dx,  0),
+        float2(-dx, +dx), float2(0, +dx), float2(+dx, +dx)
+    };
+
+    float sum = 0.0f;
+    [unroll]
+        for (int i = 0; i < 9; ++i)
+        {
+            sum += gShadowMap.SampleCmpLevelZero(
+                gsamShadow,
+                shadowPosH.xy + offsets[i],
+                depth).r;
+        }
+
+    return sum / 9.0f; // 0(완전 그림자) ~ 1(완전 밝음)
+}
 
 struct VertexOut
 {
@@ -94,8 +146,9 @@ float4 PS(VertexOut pin) : SV_Target
     // Ambient lighting
     float4 ambient = gAmbientLight * albedo;
 
-    // Shadow factor (all 1.0 for now)
-    float4 shadowFactor = float4(1.0f, 1.0f, 1.0f, 1.0f);
+    // Shadow factor
+    float shadow = CalcShadowFactor(posW);
+    float4 shadowFactor = float4(shadow, shadow, shadow, shadow);
 
     // Compute lighting
     float4 directLight = ComputeLighting(gLights, mat, posW, normalW, toEyeW, shadowFactor);

@@ -186,14 +186,21 @@ void RendererCore::CreateGBuffer() {
     m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_GBufferRTVHeap));
     m_GBufferRTVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    // G-Buffer SRV Heap 생성 (4개 SRV + 1개 SSGI SRV + 1개 SSGI UAV = 6개)
+    // G-Buffer SRV Heap 생성
+ // 0: Position SRV
+ // 1: Normal   SRV
+ // 2: Albedo   SRV
+ // 3: Material SRV
+ // 4: SSGI     SRV
+ // 5: Shadow   SRV
+ // 6: SSGI     UAV
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = 6;
+    srvHeapDesc.NumDescriptors = 7; // 6 → 7 로 변경
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_Device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_GBufferSRVHeap));
     m_GBufferSRVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
+    
     D3D12_RESOURCE_DESC gbufferDesc = {};
     gbufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     gbufferDesc.Width = m_Width;
@@ -332,14 +339,15 @@ void RendererCore::CreateSSGIBuffer() {
     m_Device->CreateShaderResourceView(m_SSGIBuffer.Get(), nullptr, srvHandle);
     m_Device->CreateUnorderedAccessView(m_SSGIBuffer.Get(), nullptr, nullptr, uavHandle);
     
-    // SSGI SRV를 G-Buffer SRV Heap의 4번째 슬롯에 직접 생성
+    // SSGI SRV를 G-Buffer SRV Heap의 4번째 슬롯에 직접 생성 (index 4)
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferSrvHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
     gbufferSrvHandle.ptr += 4 * m_GBufferSRVDescriptorSize;
     m_Device->CreateShaderResourceView(m_SSGIBuffer.Get(), nullptr, gbufferSrvHandle);
-    
-    // SSGI UAV를 G-Buffer SRV Heap의 5번째 슬롯에 직접 생성
+
+    // SSGI UAV를 G-Buffer SRV Heap의 6번째 슬롯에 직접 생성 (index 6)
+    // index 5는 ShadowMap SRV 용도
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferUavHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
-    gbufferUavHandle.ptr += 5 * m_GBufferSRVDescriptorSize;
+    gbufferUavHandle.ptr += 6 * m_GBufferSRVDescriptorSize; // 5 → 6
     m_Device->CreateUnorderedAccessView(m_SSGIBuffer.Get(), nullptr, nullptr, gbufferUavHandle);
 }
 
@@ -359,7 +367,8 @@ D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIUAVHandle() const {
 
 D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIUAVHandleFromGBufferHeap() const {
     D3D12_GPU_DESCRIPTOR_HANDLE handle = m_GBufferSRVHeap->GetGPUDescriptorHandleForHeapStart();
-    handle.ptr += 5 * m_GBufferSRVDescriptorSize; // UAV는 5번째 슬롯 (0-3: G-Buffer, 4: SSGI SRV, 5: SSGI UAV)
+    // 0-3: G-Buffer SRV, 4: SSGI SRV, 5: ShadowMap SRV, 6: SSGI UAV
+    handle.ptr += 6 * m_GBufferSRVDescriptorSize; // 5 → 6
     return handle;
 }
 

@@ -45,6 +45,11 @@ private:
     void RenderSSGIPass(UINT frameIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
+
+    void RenderShadowPass(UINT frameIndex);
+    void CreateShadowPipelineState();
+    void CreateShadowResources();
+
     void CreateGBufferPipelineState();
     void CreateLightingPipelineState();
     void CreateSSGIPipelineState();
@@ -62,10 +67,21 @@ private:
     // Pipeline states for Deferred Rendering
     ComPtr<ID3D12RootSignature> m_GBufferRootSignature;
     ComPtr<ID3D12PipelineState> m_GBufferPipelineState;
+
+    ComPtr<ID3D12PipelineState> m_ShadowPipelineState;
+
     ComPtr<ID3D12RootSignature> m_LightingRootSignature;
     ComPtr<ID3D12PipelineState> m_LightingPipelineState;
     ComPtr<ID3D12RootSignature> m_SSGIRootSignature;
     ComPtr<ID3D12PipelineState> m_SSGIPipelineState;
+
+    // Shadow map 리소스 + DSV
+    ComPtr<ID3D12Resource> m_ShadowMap;
+    ComPtr<ID3D12DescriptorHeap> m_ShadowDsvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_ShadowDsv = {};
+    UINT m_ShadowMapSize = 2048;
+    D3D12_VIEWPORT m_ShadowViewport = {};
+    D3D12_RECT m_ShadowScissorRect = {};
 
     // Camera matrices
     XMFLOAT4X4 m_ViewMatrix;

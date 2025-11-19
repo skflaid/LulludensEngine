@@ -144,10 +144,12 @@ float4 ComputeLighting(Light gLights[MaxLights], Material mat,
     int i = 0;
 
 #if (NUM_DIR_LIGHTS > 0)
-    for (i = 0; i < NUM_DIR_LIGHTS; ++i)
-    {
-        result += shadowFactor[i] * ComputeDirectionalLight(gLights[i], mat, normal, toEye);
-    }
+
+        for (int i = 0; i < NUM_DIR_LIGHTS; ++i)
+        {
+            float3 dirLit = ComputeDirectionalLight(gLights[i], mat, normal, toEye);
+            result += shadowFactor * dirLit;  // 모든 방향광에 shadow 곱하기
+        }
 #endif
 
 #if (NUM_POINT_LIGHTS > 0)
