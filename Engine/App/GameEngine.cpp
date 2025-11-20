@@ -92,7 +92,7 @@ Entity* GameEngine::GetEntityByIndex(uint64_t index)
 void GameEngine::CreateEntities()
 {
     // ======== 메인 카메라 생성 ========
-    auto cameraEntity = std::make_unique<Entity>(4); // ID 0번으로 카메라 생성
+    auto cameraEntity = std::make_unique<Entity>(4); // ID 4번으로 카메라 생성
     cameraEntity->AddComponent<TransformComponent>();
     auto cameraComp = cameraEntity->AddComponent<CameraComponent>();
 
@@ -108,19 +108,20 @@ void GameEngine::CreateEntities()
     m_Entities.push_back(std::move(cameraEntity));
 
     // Cube
-    auto cube = std::make_unique<Entity>(1);
-    auto t = cube->AddComponent<TransformComponent>();
-    t->SetPosition(0.0f, 5.0f, 0.0f);
-    t->SetScale(1.0f, 1.0f, 1.0f);
-    cube->AddComponent<RigidbodyComponent>()->mass = 1.0f;
-    cube->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
-    cube->AddComponent<MeshComponent>()->CreateCube();
-    cube->AddComponent<MaterialComponent>()->SetAlbedo(0.8f, 0.3f, 0.3f);
+    for (int i = 0; i < 5; i++) {
+        auto cube = std::make_unique<Entity>(5+i);
+        auto t = cube->AddComponent<TransformComponent>();
+        t->SetPosition(0.0f, 20.0f, 0.0f);
+        t->SetScale(1.0f, 1.0f, 1.0f);
+        cube->AddComponent<RigidbodyComponent>()->mass = 1.0f;
+        cube->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
+        cube->AddComponent<MeshComponent>()->CreateCube();
+        cube->AddComponent<MaterialComponent>()->SetAlbedo(0.8f, 0.3f, 0.3f);
 
-    m_PhysicsWorld->RegisterEntity(cube.get());
-    m_RenderSystem->RegisterEntity(cube.get());
-    m_Entities.push_back(std::move(cube));
-
+        m_PhysicsWorld->RegisterEntity(cube.get());
+        m_RenderSystem->RegisterEntity(cube.get());
+        m_Entities.push_back(std::move(cube));
+    }
     // Ground
     auto ground = std::make_unique<Entity>(2);
     auto gt = ground->AddComponent<TransformComponent>();
@@ -139,10 +140,10 @@ void GameEngine::CreateEntities()
 
     // FBX 모델 로드 예제
     // 주의: 실제 FBX 파일 경로로 변경해야 합니다.
-    LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f);
+    LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f, true);
 }
 
-void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll)
+void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll, bool attachMeshCollider)
 {
     // 1. FBXLoader를 사용하여 FBX 파일 로드
     FBXLoader loader;
@@ -174,7 +175,17 @@ void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, fl
         // 4. RenderSystem에 등록 (GPU 버퍼 자동 생성)
         m_RenderSystem->RegisterEntity(fbxEntity.get());
         
-        // 5. Entity를 엔진에 추가
+        // 5. MeshCollider 추가 (옵션)
+        if (attachMeshCollider) {
+            auto* meshComp = fbxEntity->GetComponent<MeshComponent>();
+            if (meshComp) {
+                auto* collider = fbxEntity->AddComponent<MeshCollider>();
+                collider->meshComponent = meshComp;
+                m_PhysicsWorld->RegisterEntity(fbxEntity.get());
+            }
+        }
+
+        // 6. Entity를 엔진에 추가
         m_Entities.push_back(std::move(fbxEntity));
     }
     else {
@@ -182,6 +193,6 @@ void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, fl
         // Log::Error("Failed to instantiate model to entity");
     }
 
-    // 6. Model 메모리 해제 (FBXLoader가 new로 할당했으므로 delete 필요)
+    // 7. Model 메모리 해제 (FBXLoader가 new로 할당했으므로 delete 필요)
     delete model;
 }

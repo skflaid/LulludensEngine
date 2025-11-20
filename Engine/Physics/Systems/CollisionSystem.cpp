@@ -3,6 +3,7 @@
 #include "../Components/ColliderComponent.h"
 #include "../../Renderer/Components/TransformComponent.h"
 #include "../Components/RigidbodyComponent.h" 
+#include "../../Renderer/Components/MeshComponent.h" // Changed from Model.h 
 #include <Windows.h>
 #include <algorithm>
 #include <DirectXCollision.h> // BoundingBox, BoundingSphere 등을 위해 포함
@@ -99,6 +100,35 @@ bool CollisionSystem::CheckAABBCollision(Entity* entityA, Entity* entityB) {
         BoundingSphere bs(transA->position, sphere->radius * maxScale);
         BoundingBox::CreateFromSphere(aabbA, bs);
     }
+    else if (collA->type == ColliderType::Mesh) {
+        auto* meshCol = static_cast<MeshCollider*>(collA);
+        if (meshCol->meshComponent && !meshCol->meshComponent->vertices.empty()) {
+            XMVECTOR minVec = XMVectorSet(FLT_MAX, FLT_MAX, FLT_MAX, 0);
+            XMVECTOR maxVec = XMVectorSet(-FLT_MAX, -FLT_MAX, -FLT_MAX, 0);
+            
+            XMMATRIX world = XMMatrixScaling(transA->scale.x, transA->scale.y, transA->scale.z) *
+                             XMMatrixRotationRollPitchYaw(transA->rotation.x, transA->rotation.y, transA->rotation.z) *
+                             XMMatrixTranslation(transA->position.x, transA->position.y, transA->position.z);
+
+            for (const auto& v : meshCol->meshComponent->vertices) {
+                XMVECTOR pos = XMLoadFloat3(&v.position);
+                pos = XMVector3Transform(pos, world);
+                minVec = XMVectorMin(minVec, pos);
+                maxVec = XMVectorMax(maxVec, pos);
+            }
+            
+            XMFLOAT3 min, max;
+            XMStoreFloat3(&min, minVec);
+            XMStoreFloat3(&max, maxVec);
+            
+            aabbA.Center.x = (min.x + max.x) * 0.5f;
+            aabbA.Center.y = (min.y + max.y) * 0.5f;
+            aabbA.Center.z = (min.z + max.z) * 0.5f;
+            aabbA.Extents.x = (max.x - min.x) * 0.5f;
+            aabbA.Extents.y = (max.y - min.y) * 0.5f;
+            aabbA.Extents.z = (max.z - min.z) * 0.5f;
+        }
+    }
 
     // --- 콜라이더 B의 AABB 계산 (A와 동일한 로직) ---
     if (collB->type == ColliderType::Box) {
@@ -132,6 +162,35 @@ bool CollisionSystem::CheckAABBCollision(Entity* entityA, Entity* entityB) {
 
         BoundingSphere bs(transB->position, sphere->radius * maxScale);
         BoundingBox::CreateFromSphere(aabbB, bs);
+    }
+    else if (collB->type == ColliderType::Mesh) {
+        auto* meshCol = static_cast<MeshCollider*>(collB);
+        if (meshCol->meshComponent && !meshCol->meshComponent->vertices.empty()) {
+            XMVECTOR minVec = XMVectorSet(FLT_MAX, FLT_MAX, FLT_MAX, 0);
+            XMVECTOR maxVec = XMVectorSet(-FLT_MAX, -FLT_MAX, -FLT_MAX, 0);
+            
+            XMMATRIX world = XMMatrixScaling(transB->scale.x, transB->scale.y, transB->scale.z) *
+                             XMMatrixRotationRollPitchYaw(transB->rotation.x, transB->rotation.y, transB->rotation.z) *
+                             XMMatrixTranslation(transB->position.x, transB->position.y, transB->position.z);
+
+            for (const auto& v : meshCol->meshComponent->vertices) {
+                XMVECTOR pos = XMLoadFloat3(&v.position);
+                pos = XMVector3Transform(pos, world);
+                minVec = XMVectorMin(minVec, pos);
+                maxVec = XMVectorMax(maxVec, pos);
+            }
+            
+            XMFLOAT3 min, max;
+            XMStoreFloat3(&min, minVec);
+            XMStoreFloat3(&max, maxVec);
+            
+            aabbB.Center.x = (min.x + max.x) * 0.5f;
+            aabbB.Center.y = (min.y + max.y) * 0.5f;
+            aabbB.Center.z = (min.z + max.z) * 0.5f;
+            aabbB.Extents.x = (max.x - min.x) * 0.5f;
+            aabbB.Extents.y = (max.y - min.y) * 0.5f;
+            aabbB.Extents.z = (max.z - min.z) * 0.5f;
+        }
     }
 
     return aabbA.Intersects(aabbB);
@@ -337,6 +396,18 @@ void CollisionSystem::NarrowPhaseDetection() {
         else if (collA->type == ColliderType::Sphere && collB->type == ColliderType::Box) {
             collided = TestBoxSphere(pair.entityB, pair.entityA); // 순서만 바꿔서 재사용
         }
+        else if (collA->type == ColliderType::Mesh && collB->type == ColliderType::Sphere) {
+            collided = TestMeshSphere(pair.entityA, pair.entityB);
+        }
+        else if (collA->type == ColliderType::Sphere && collB->type == ColliderType::Mesh) {
+            collided = TestMeshSphere(pair.entityB, pair.entityA);
+        }
+        else if (collA->type == ColliderType::Mesh && collB->type == ColliderType::Box) {
+            collided = TestMeshBox(pair.entityA, pair.entityB);
+        }
+        else if (collA->type == ColliderType::Box && collB->type == ColliderType::Mesh) {
+            collided = TestMeshBox(pair.entityB, pair.entityA);
+        }
 
         if (collided) {
             precisePairs.push_back(pair);
@@ -510,6 +581,196 @@ bool CollisionSystem::TestBoxSphere(Entity* boxEntity, Entity* sphereEntity) {
         boxColl->penetrationDepth = sphereColl->penetrationDepth = penetration;
         return true;
     }
+    return false;
+}
+
+// Helper: Point-Triangle Distance Squared
+float PointTriangleDistSq(XMVECTOR p, XMVECTOR a, XMVECTOR b, XMVECTOR c, XMVECTOR& outClosest) {
+    XMVECTOR ab = b - a;
+    XMVECTOR ac = c - a;
+    XMVECTOR ap = p - a;
+
+    float d1 = XMVectorGetX(XMVector3Dot(ab, ap));
+    float d2 = XMVectorGetX(XMVector3Dot(ac, ap));
+    if (d1 <= 0.0f && d2 <= 0.0f) { outClosest = a; return XMVectorGetX(XMVector3LengthSq(p - a)); }
+
+    XMVECTOR bp = p - b;
+    float d3 = XMVectorGetX(XMVector3Dot(ab, bp));
+    float d4 = XMVectorGetX(XMVector3Dot(ac, bp));
+    if (d3 >= 0.0f && d4 <= d3) { outClosest = b; return XMVectorGetX(XMVector3LengthSq(p - b)); }
+
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        float v = d1 / (d1 - d3);
+        outClosest = a + v * ab;
+        return XMVectorGetX(XMVector3LengthSq(p - outClosest));
+    }
+
+    XMVECTOR cp = p - c;
+    float d5 = XMVectorGetX(XMVector3Dot(ab, cp));
+    float d6 = XMVectorGetX(XMVector3Dot(ac, cp));
+    if (d6 >= 0.0f && d5 <= d6) { outClosest = c; return XMVectorGetX(XMVector3LengthSq(p - c)); }
+
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        float w = d2 / (d2 - d6);
+        outClosest = a + w * ac;
+        return XMVectorGetX(XMVector3LengthSq(p - outClosest));
+    }
+
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        outClosest = b + w * (c - b);
+        return XMVectorGetX(XMVector3LengthSq(p - outClosest));
+    }
+
+    float denom = 1.0f / (va + vb + vc);
+    float v = vb * denom;
+    float w = vc * denom;
+    outClosest = a + ab * v + ac * w;
+    return XMVectorGetX(XMVector3LengthSq(p - outClosest));
+}
+
+bool CollisionSystem::TestMeshSphere(Entity* meshEntity, Entity* sphereEntity) {
+    auto* meshCol = static_cast<MeshCollider*>(meshEntity->GetCollider());
+    auto* sphereCol = static_cast<SphereCollider*>(sphereEntity->GetCollider());
+    auto* meshTrans = meshEntity->GetComponent<TransformComponent>();
+    auto* sphereTrans = sphereEntity->GetComponent<TransformComponent>();
+
+    if (!meshCol->meshComponent) return false;
+
+    // Sphere World Info
+    float maxScale = sphereTrans->scale.x;
+    if (sphereTrans->scale.y > maxScale) maxScale = sphereTrans->scale.y;
+    if (sphereTrans->scale.z > maxScale) maxScale = sphereTrans->scale.z;
+    
+    float radius = sphereCol->radius * maxScale;
+    float radiusSq = radius * radius;
+    XMVECTOR sphereCenter = XMLoadFloat3(&sphereTrans->position);
+
+    // Mesh World Transform
+    XMMATRIX meshWorld = XMMatrixScaling(meshTrans->scale.x, meshTrans->scale.y, meshTrans->scale.z) *
+                         XMMatrixRotationRollPitchYaw(meshTrans->rotation.x, meshTrans->rotation.y, meshTrans->rotation.z) *
+                         XMMatrixTranslation(meshTrans->position.x, meshTrans->position.y, meshTrans->position.z);
+
+    const auto& indices = meshCol->meshComponent->indices;
+    const auto& vertices = meshCol->meshComponent->vertices;
+
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        XMVECTOR v0 = XMLoadFloat3(&vertices[indices[i]].position);
+        XMVECTOR v1 = XMLoadFloat3(&vertices[indices[i+1]].position);
+        XMVECTOR v2 = XMLoadFloat3(&vertices[indices[i+2]].position);
+
+        v0 = XMVector3Transform(v0, meshWorld);
+        v1 = XMVector3Transform(v1, meshWorld);
+        v2 = XMVector3Transform(v2, meshWorld);
+
+        XMVECTOR closest;
+        float distSq = PointTriangleDistSq(sphereCenter, v0, v1, v2, closest);
+
+        if (distSq <= radiusSq) {
+            meshCol->hasContact = true;
+            sphereCol->hasContact = true;
+            
+            XMVECTOR normal = XMVector3Normalize(sphereCenter - closest);
+            XMStoreFloat3(&meshCol->contactNormal, normal);
+            XMStoreFloat3(&sphereCol->contactNormal, -normal);
+            
+            float dist = sqrt(distSq);
+            meshCol->penetrationDepth = radius - dist;
+            sphereCol->penetrationDepth = radius - dist;
+            
+            return true; 
+        }
+    }
+
+    return false;
+}
+
+bool CollisionSystem::TestMeshBox(Entity* meshEntity, Entity* boxEntity) {
+    auto* meshCol = static_cast<MeshCollider*>(meshEntity->GetCollider());
+    auto* boxCol = static_cast<BoxCollider*>(boxEntity->GetCollider());
+    auto* meshTrans = meshEntity->GetComponent<TransformComponent>();
+    auto* boxTrans = boxEntity->GetComponent<TransformComponent>();
+
+    if (!meshCol->meshComponent) return false;
+
+    // Box OBB
+    BoundingOrientedBox obb;
+    obb.Center = boxTrans->position;
+    XMVECTOR sizeVec = DirectX::XMLoadFloat3(&boxCol->size);
+    XMVECTOR scaleVec = DirectX::XMLoadFloat3(&boxTrans->scale);
+    DirectX::XMStoreFloat3(&obb.Extents, sizeVec * scaleVec * 0.5f);
+    XMVECTOR quat = DirectX::XMQuaternionRotationRollPitchYaw(
+        DirectX::XMConvertToRadians(boxTrans->rotation.x),
+        DirectX::XMConvertToRadians(boxTrans->rotation.y),
+        DirectX::XMConvertToRadians(boxTrans->rotation.z)
+    );
+    DirectX::XMStoreFloat4(&obb.Orientation, quat);
+
+    // Mesh World Transform
+    XMMATRIX meshWorld = XMMatrixScaling(meshTrans->scale.x, meshTrans->scale.y, meshTrans->scale.z) *
+                         XMMatrixRotationRollPitchYaw(meshTrans->rotation.x, meshTrans->rotation.y, meshTrans->rotation.z) *
+                         XMMatrixTranslation(meshTrans->position.x, meshTrans->position.y, meshTrans->position.z);
+
+    const auto& indices = meshCol->meshComponent->indices;
+    const auto& vertices = meshCol->meshComponent->vertices;
+
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        XMVECTOR v0 = XMLoadFloat3(&vertices[indices[i]].position);
+        XMVECTOR v1 = XMLoadFloat3(&vertices[indices[i+1]].position);
+        XMVECTOR v2 = XMLoadFloat3(&vertices[indices[i+2]].position);
+
+        v0 = XMVector3Transform(v0, meshWorld);
+        v1 = XMVector3Transform(v1, meshWorld);
+        v2 = XMVector3Transform(v2, meshWorld);
+
+        if (obb.Intersects(v0, v1, v2)) {
+            meshCol->hasContact = true;
+            boxCol->hasContact = true;
+            
+            // Calculate Triangle Normal
+            XMVECTOR edge1 = v1 - v0;
+            XMVECTOR edge2 = v2 - v0;
+            XMVECTOR triNormal = XMVector3Normalize(XMVector3Cross(edge1, edge2));
+
+            // Ensure normal points towards the box center (prevent tunneling from backface)
+            XMVECTOR boxCenter = XMLoadFloat3(&obb.Center);
+            if (XMVectorGetX(XMVector3Dot(triNormal, boxCenter - v0)) < 0.0f) {
+                triNormal = -triNormal;
+            }
+
+            // Calculate Box Projection Radius along Triangle Normal
+            XMVECTOR axisX = XMVector3Rotate(XMVectorSet(1, 0, 0, 0), quat);
+            XMVECTOR axisY = XMVector3Rotate(XMVectorSet(0, 1, 0, 0), quat);
+            XMVECTOR axisZ = XMVector3Rotate(XMVectorSet(0, 0, 1, 0), quat);
+
+            float r = obb.Extents.x * fabsf(XMVectorGetX(XMVector3Dot(triNormal, axisX))) +
+                      obb.Extents.y * fabsf(XMVectorGetX(XMVector3Dot(triNormal, axisY))) +
+                      obb.Extents.z * fabsf(XMVectorGetX(XMVector3Dot(triNormal, axisZ)));
+
+            // Calculate Distance from Box Center to Triangle Plane
+            float dist = XMVectorGetX(XMVector3Dot(triNormal, boxCenter - v0));
+
+            // Penetration Depth
+            float penetration = r - dist;
+
+            // If penetration is negative, it means we are behind the plane but Intersects() returned true.
+            // This usually happens on edges or if we are slightly behind.
+            // We clamp to a small positive value or use the calculated value if positive.
+            if (penetration <= 0.0f) penetration = 0.001f; // Minimal contact
+
+            XMStoreFloat3(&meshCol->contactNormal, triNormal);
+            XMStoreFloat3(&boxCol->contactNormal, -triNormal);
+            
+            meshCol->penetrationDepth = penetration;
+            boxCol->penetrationDepth = penetration;
+
+            return true;
+        }
+    }
+
     return false;
 }
 

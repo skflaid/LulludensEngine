@@ -88,7 +88,10 @@ Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel
     // 2. 인덱스 데이터(Index Data)를 순회하며 추출
     for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
         aiFace face = mesh->mFaces[i];
-        // aiProcess_Triangulate 플래그를 사용했으므로, 모든 면(face)은 삼각형임.
+        // aiProcess_Triangulate 플래그를 사용했으므로, 폴리곤은 삼각형으로 변환됨.
+        // 하지만 라인이나 포인트가 포함될 수 있으므로 3개인 경우만 처리.
+        if (face.mNumIndices != 3) continue;
+
         for (unsigned int j = 0; j < face.mNumIndices; j++) {
             indices.push_back(face.mIndices[j]);
         }

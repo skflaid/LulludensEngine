@@ -34,7 +34,7 @@ public:
     Entity* GetEntityByIndex(uint64_t index);
 
     // FBX 모델 로드 함수
-    void LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll);
+    void LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll, bool attachMeshCollider = false);
 
     // 렌더링 모드 토글
     void ToggleRenderMode();

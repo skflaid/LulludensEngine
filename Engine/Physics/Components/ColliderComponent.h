@@ -7,7 +7,8 @@ using namespace DirectX;
 enum class ColliderType {
     Box,
     Sphere,
-    Capsule
+    Capsule,
+    Mesh
 };
 
 struct ColliderComponent : public IComponent {
@@ -17,10 +18,10 @@ struct ColliderComponent : public IComponent {
     bool isTrigger = false;
     XMFLOAT3 center = { 0.0f, 0.0f, 0.0f };
 
-    // === 경사면 물리를 위한 충돌 결과 필드 추가 ===
-    XMFLOAT3 contactPoint = { 0.0f, 0.0f, 0.0f };   // 충돌 지점
-    XMFLOAT3 contactNormal = { 0.0f, 1.0f, 0.0f };  // 충돌 표면 법선 (기본값: 위쪽)
-    bool hasContact = false;                         // 이번 프레임에 충돌했는지 여부
+    // === Collision Response Data ===
+    XMFLOAT3 contactPoint = { 0.0f, 0.0f, 0.0f };
+    XMFLOAT3 contactNormal = { 0.0f, 1.0f, 0.0f };
+    bool hasContact = false;
     float penetrationDepth = 0.0f;
 
     virtual ~ColliderComponent() = default;
@@ -43,4 +44,15 @@ struct CapsuleCollider : public ColliderComponent {
     float radius = 0.5f;
     float height = 2.0f;
     CapsuleCollider() { type = ColliderType::Capsule; }
+};
+
+// Forward declaration
+struct MeshComponent;
+
+struct MeshCollider : public ColliderComponent {
+    COMPONENT_TYPE(MeshCollider)
+    // MeshComponent pointer (holds vertex data)
+    MeshComponent* meshComponent = nullptr; 
+    
+    MeshCollider() { type = ColliderType::Mesh; }
 };

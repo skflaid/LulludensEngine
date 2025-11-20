@@ -33,10 +33,12 @@ private:
     void NarrowPhaseDetection();
     void ResolveCollisions();
 
-    // === Ãæµ¹ Å¸ÀÔº° °Ë»ç ÇÔ¼ö ¼±¾ğ ===
+    // === ì¶©ëŒ íƒ€ì…ë³„ ê²€ì‚¬ í•¨ìˆ˜ ì„ ì–¸ ===
     bool TestBoxBox(Entity* entityA, Entity* entityB);
     bool TestSphereSphere(Entity* entityA, Entity* entityB);
     bool TestBoxSphere(Entity* boxEntity, Entity* sphereEntity);
+    bool TestMeshSphere(Entity* meshEntity, Entity* sphereEntity);
+    bool TestMeshBox(Entity* meshEntity, Entity* boxEntity);
 
     bool m_Enabled = true;
 
