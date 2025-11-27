@@ -11,6 +11,30 @@
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
+inline std::string NormalizeBoneName(const std::string& name)
+{
+    std::string r = name;
+
+    // 1) 마지막 ':' 또는 '|' 뒤만 사용 (FBX에서 자주 나오는 패턴)
+    size_t pos = r.find_last_of(":|");
+    if (pos != std::string::npos) {
+        r = r.substr(pos + 1);
+    }
+
+    // 2) 양쪽 공백 제거
+    while (!r.empty() && (r.front() == ' ' || r.front() == '\t'))
+        r.erase(r.begin());
+    while (!r.empty() && (r.back() == ' ' || r.back() == '\t'))
+        r.pop_back();
+
+    // 3) 소문자로 통일
+    for (auto& ch : r) {
+        ch = (char)std::tolower((unsigned char)ch);
+    }
+
+    return r;
+}
+
 // 정점 데이터 구조체 (Model용 - MeshComponent::Vertex와 구분)
 struct ModelVertex {
     XMFLOAT3 Pos;
@@ -94,9 +118,18 @@ public:
     std::vector<ModelAnimationClip> Animations;            // 애니메이션 클립들
 
     int GetBoneIndex(const std::string& name) const {
+        // 1) 원본 이름 그대로 검색
         auto it = BoneNameToIndex.find(name);
-        if (it == BoneNameToIndex.end()) return -1;
-        return it->second;
+        if (it != BoneNameToIndex.end())
+            return it->second;
+
+        // 2) 정규화해서 다시 검색
+        std::string norm = NormalizeBoneName(name);
+        it = BoneNameToIndex.find(norm);
+        if (it != BoneNameToIndex.end())
+            return it->second;
+
+        return -1;
     }
 
     const ModelAnimationClip* GetAnimation(const std::string& name) const {

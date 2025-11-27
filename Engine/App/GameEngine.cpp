@@ -120,7 +120,7 @@ void GameEngine::CreateEntities()
     m_Entities.push_back(std::move(cameraEntity));
 
     // Cube
-    for (int i = 0; i < 5; i++) {
+    /*for (int i = 0; i < 5; i++) {
         auto cube = std::make_unique<Entity>(5+i);
         auto t = cube->AddComponent<TransformComponent>();
         t->SetPosition(0.0f, 20.0f, 0.0f);
@@ -133,7 +133,8 @@ void GameEngine::CreateEntities()
         m_PhysicsWorld->RegisterEntity(cube.get());
         m_RenderSystem->RegisterEntity(cube.get());
         m_Entities.push_back(std::move(cube));
-    }
+    }*/
+
     // Ground
     auto ground = std::make_unique<Entity>(2);
     auto gt = ground->AddComponent<TransformComponent>();
@@ -178,36 +179,6 @@ void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId,
 
     // 3. Model을 Entity로 변환 (모든 메시를 하나로 병합)
     bool instantiated = ModelInstantiation::InstantiateToEntity(model, fbxEntity.get(), true);
-
-    // === 3-1. 스켈레톤 / 애니메이션 컴포넌트 붙이기 ===
-    // FBXLoader가 채워준 Bones / Animations를 그대로 복사
-    if (!model->Bones.empty()) {
-        auto* skeleton = fbxEntity->AddComponent<SkeletonComponent>();
-
-        skeleton->Bones = model->Bones;
-        skeleton->BoneNameToIndex = model->BoneNameToIndex;
-        skeleton->Animations = model->Animations;
-
-        // FinalBoneTransforms 초기값: 전부 단위 행렬
-        skeleton->FinalBoneTransforms.resize(skeleton->Bones.size());
-        for (auto& m : skeleton->FinalBoneTransforms) {
-            XMStoreFloat4x4(&m, XMMatrixIdentity());
-        }
-
-        // 애니메이션 재생 상태 컴포넌트
-        auto* animComp = fbxEntity->AddComponent<SkeletalAnimationComponent>();
-        if (!skeleton->Animations.empty()) {
-            // 첫 번째 클립을 기본으로 재생
-            animComp->CurrentClipName = skeleton->Animations[0].Name;
-        }
-        else {
-            animComp->CurrentClipName.clear();
-        }
-        animComp->CurrentTime = 0.0;
-        animComp->PlayRate = 1.0f;
-        animComp->Loop = true;
-        animComp->Playing = true;
-    }
 
     // 4. 메시 인스턴스화에 성공했을 때만 렌더/피직스 등록
     if (instantiated) {

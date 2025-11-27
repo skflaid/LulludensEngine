@@ -170,7 +170,7 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
                 continue;
             }
         }
-        //XMStoreFloat4x4(&localTransforms[i], XMMatrixIdentity());
+        // XMStoreFloat4x4(&localTransforms[i], XMMatrixIdentity());
         localTransforms[i] = skeleton->Bones[i].BindTransform;
     }
 
@@ -206,8 +206,8 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
         XMMATRIX global = XMLoadFloat4x4(&globalTransforms[i]);
         XMMATRIX offset = XMLoadFloat4x4(&skeleton->Bones[i].Offset);
 
-        // 흔히 쓰는 형태는 global * offset (Assimp 기준)
-        XMMATRIX finalM = global * offset;
+        // 흔히 쓰는 형태는 offset * global (Assimp 기준)
+        XMMATRIX finalM = offset * global;
         XMStoreFloat4x4(&skeleton->FinalBoneTransforms[i], finalM);
     }
 }

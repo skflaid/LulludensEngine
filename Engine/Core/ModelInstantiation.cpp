@@ -7,6 +7,42 @@
 
 #include "Renderer/Model.h"
 
+// 어디든 접근 쉬운 cpp에 정적 함수로 두면 편함 (예: ModelInstantiation.cpp 상단에)
+static void RebuildBindLocal(class SkeletonComponent* skeleton)
+{
+    using namespace DirectX;
+
+    const size_t n = skeleton->Bones.size();
+    if (n == 0) return;
+
+    std::vector<XMFLOAT4X4> globalBind(n);
+
+    // 1) GlobalBind = inverse(Offset)
+    for (size_t i = 0; i < n; ++i) {
+        XMMATRIX offset = XMLoadFloat4x4(&skeleton->Bones[i].Offset); // Offset = inverse(bind)
+        XMMATRIX gBind = XMMatrixInverse(nullptr, offset);
+        XMStoreFloat4x4(&globalBind[i], gBind);
+    }
+
+    // 2) BindLocal = inv(GlobalBind[parent]) * GlobalBind[i]
+    for (size_t i = 0; i < n; ++i) {
+        int p = skeleton->Bones[i].ParentIndex;
+        XMMATRIX g = XMLoadFloat4x4(&globalBind[i]);
+        XMMATRIX loc;
+        if (p >= 0) {
+            XMMATRIX gp = XMLoadFloat4x4(&globalBind[(size_t)p]);
+            XMMATRIX invGp = XMMatrixInverse(nullptr, gp);
+            loc = invGp * g;
+        }
+        else {
+            loc = g; // 루트는 글로벌=로컬
+        }
+        // 이제 BindTransform에는 "로컬 바인드"를 저장
+        XMStoreFloat4x4(&skeleton->Bones[i].BindTransform, loc);
+    }
+}
+
+
 namespace ModelInstantiation {
     bool InstantiateToEntity(const Model* model, Entity* entity, bool mergeAllMeshes) {
         if (!model || !entity) {
@@ -86,15 +122,33 @@ namespace ModelInstantiation {
                 
                 // Vertex 변환: ModelVertex -> MeshComponent::Vertex
                 for (const auto& modelVertex : mesh->Vertices) {
-                    ::Vertex meshCompVertex; // MeshComponent의 Vertex 사용
+                    ::Vertex meshCompVertex{};                   // 전체 0으로 초기화
                     meshCompVertex.position = modelVertex.Pos;
                     meshCompVertex.normal = modelVertex.Normal;
                     meshCompVertex.texCoord = modelVertex.TexC;
 
-                    // --- 추가: 본 인덱스 / 가중치 복사 ---
+                    // 본/가중치 복사 (모델에서 가져온 만큼만 유효)
                     for (int i = 0; i < 4; ++i) {
                         meshCompVertex.boneIndices[i] = modelVertex.BoneIndices[i];
                         meshCompVertex.boneWeights[i] = modelVertex.BoneWeights[i];
+                    }
+
+                    // 가중치 정규화 + 디폴트 보정
+                    float s = meshCompVertex.boneWeights[0] + meshCompVertex.boneWeights[1]
+                        + meshCompVertex.boneWeights[2] + meshCompVertex.boneWeights[3];
+
+                    if (s > 0.0f) {
+                        float inv = 1.0f / s;
+                        for (int i = 0; i < 4; ++i) meshCompVertex.boneWeights[i] *= inv;
+                    }
+                    else {
+                        // 어떤 이유로든 전부 0이면 루트 본 하나만 영향 주도록
+                        meshCompVertex.boneIndices[0] = 0;
+                        meshCompVertex.boneWeights[0] = 1.0f;
+                        for (int i = 1; i < 4; ++i) {
+                            meshCompVertex.boneIndices[i] = 0;
+                            meshCompVertex.boneWeights[i] = 0.0f;
+                        }
                     }
 
                     meshComp->vertices.push_back(meshCompVertex);

@@ -17,6 +17,38 @@
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
+static void MakeBindLocalInModel(Model& model)
+{
+    using namespace DirectX;
+    auto& bones = model.Bones;
+    size_t n = bones.size();
+    if (!n) return;
+
+    std::vector<XMFLOAT4X4> globalBind(n);
+
+    // GlobalBind = inverse(Offset)
+    for (size_t i = 0; i < n; ++i) {
+        XMMATRIX off = XMLoadFloat4x4(&bones[i].Offset);    // Offset = inverse(bind)
+        XMMATRIX g = XMMatrixInverse(nullptr, off);       // global bind
+        XMStoreFloat4x4(&globalBind[i], g);
+    }
+
+    for (size_t i = 0; i < n; ++i) {
+        int p = bones[i].ParentIndex;
+        XMMATRIX g = XMLoadFloat4x4(&globalBind[i]);
+        XMMATRIX loc;
+        if (p >= 0) {
+            XMMATRIX gp = XMLoadFloat4x4(&globalBind[p]);
+            // ✅ row-vector: local = childGlobal * inverse(parentGlobal)
+            loc = g * XMMatrixInverse(nullptr, gp);
+        }
+        else {
+            loc = g; // 루트: parent = I → local = global
+        }
+        XMStoreFloat4x4(&bones[i].BindTransform, loc); // 이제 '로컬 바인드'
+    }
+}
+
 namespace
 {
     DirectX::XMFLOAT4X4 ToXMFLOAT4X4(const aiMatrix4x4& m)
@@ -31,23 +63,23 @@ namespace
 
     int GetOrCreateBoneIndex(Model* model, const std::string& name, const aiBone* bone)
     {
-        auto it = model->BoneNameToIndex.find(name);
+        // 정규화된 이름으로 통일
+        std::string normName = NormalizeBoneName(name);
+
+        auto it = model->BoneNameToIndex.find(normName);
         if (it != model->BoneNameToIndex.end())
             return it->second;
 
         ModelBone newBone;
-        newBone.Name = name;
+        newBone.Name = normName;      // 디버깅용으로도 정규화된 이름 사용
         newBone.ParentIndex = -1;
         newBone.Offset = ToXMFLOAT4X4(bone->mOffsetMatrix);
+        XMStoreFloat4x4(&newBone.BindTransform, XMMatrixIdentity());
 
-        // Bind pose = inverse of Offset
-        XMMATRIX offsetM = XMLoadFloat4x4(&newBone.Offset);
-        XMMATRIX bindM = XMMatrixInverse(nullptr, offsetM);
-        XMStoreFloat4x4(&newBone.BindTransform, bindM);
-
-        int index = static_cast<int>(model->Bones.size());
+        int index = (int)model->Bones.size();
         model->Bones.push_back(newBone);
-        model->BoneNameToIndex[name] = index;
+        model->BoneNameToIndex[normName] = index;
+
         return index;
     }
 }
@@ -84,6 +116,7 @@ Model* FBXLoader::Load(const std::string& filePath) {
     // 메시들을 전부 훑은 뒤에 본 계층 + 애니메이션 처리
     BuildSkeletonHierarchy(scene, model.get());
     ProcessAnimations(scene, model.get());
+    MakeBindLocalInModel(*model);
 
     return model.release();
 }
@@ -271,7 +304,8 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* scene, Model* outModel)
     std::function<void(aiNode*, int)> recurse =
         [&](aiNode* node, int parentBoneIndex)
         {
-            std::string nodeName = node->mName.C_Str();
+            std::string nodeNameRaw = node->mName.C_Str();
+            std::string nodeName = NormalizeBoneName(nodeNameRaw);
             int currentBoneIndex = parentBoneIndex;
 
             auto it = outModel->BoneNameToIndex.find(nodeName);
@@ -287,6 +321,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* scene, Model* outModel)
 
     recurse(scene->mRootNode, -1);
 }
+
 
 void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
 {
@@ -312,10 +347,14 @@ void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
 
         for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
             aiNodeAnim* channel = anim->mChannels[c];
-            std::string channelName = channel->mNodeName.C_Str();
+            std::string channelNameRaw = channel->mNodeName.C_Str();
+            std::string channelName = NormalizeBoneName(channelNameRaw);
 
             int boneIndex = outModel->GetBoneIndex(channelName);
-            if (boneIndex < 0) continue;
+            if (boneIndex < 0) {
+                // 디버깅용으로 보고 싶으면 여기서 OutputDebugString 써도 됨
+                continue;
+            }
 
             ModelBoneAnimation& boneAnim = clip.BoneAnimations[boneIndex];
 
@@ -358,5 +397,17 @@ void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
         }
 
         outModel->Animations.push_back(std::move(clip));
+
+        for (size_t i = 0; i < clip.BoneAnimations.size(); ++i) {
+            const auto& b = clip.BoneAnimations[i];
+            if (!b.Translations.empty() || !b.Rotations.empty() || !b.Scales.empty()) {
+                std::cout << "[Anim] bone " << outModel->Bones[i].Name
+                    << " keys T:" << b.Translations.size()
+                    << " R:" << b.Rotations.size()
+                    << " S:" << b.Scales.size() << "\n";
+            }
+        }
     }
+
+
 }
