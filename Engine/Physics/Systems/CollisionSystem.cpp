@@ -1,4 +1,4 @@
-﻿#include "CollisionSystem.h"
+#include "CollisionSystem.h"
 #include "Core/Entity.h"
 #include "../Components/ColliderComponent.h"
 #include "../../Renderer/Components/TransformComponent.h"
@@ -521,7 +521,42 @@ bool CollisionSystem::TestBoxBox(Entity* entityA, Entity* entityB) {
     collB->hasContact = true;
     collB->penetrationDepth = penetration;
 
-    return true; // 충돌함
+    // === 여기부터 contactPoint 근사 추가 ===
+
+// A쪽에서 볼 때, bestAxis와 가장 평행한 A의 로컬 축 찾기
+    int bestAxisIndex = 0;
+    float maxDot = -FLT_MAX;
+    for (int i = 0; i < 3; ++i) {
+        float d = fabsf(XMVectorGetX(XMVector3Dot(bestAxis, axisA[i])));
+        if (d > maxDot) {
+            maxDot = d;
+            bestAxisIndex = i;
+        }
+    }
+
+    // 그 축 방향으로의 half extents 길이
+    float halfAlongNormal = (&halfA.x)[bestAxisIndex];
+
+    // A 중심
+    XMFLOAT3 centerA3;
+    XMStoreFloat3(&centerA3, centerA);
+
+    // contactPoint ≈ A 중심에서 법선 방향으로 (half + penetration * 0.5) 만큼 나간 점
+    float offset = halfAlongNormal + penetration * 0.5f;
+    XMVECTOR contactPoint = centerA + bestAxis * offset;
+
+    XMFLOAT3 cp;
+    XMStoreFloat3(&cp, contactPoint);
+
+    // 콜라이더 둘 다에 같은 접촉점 저장 (공유 접촉점으로)
+    collA->contactPoint = cp;
+    collB->contactPoint = cp;
+
+    char buf[128];
+    sprintf_s(buf, "cp: %.3f, %.3f, %.3f\n", cp.x, cp.y, cp.z);
+    OutputDebugStringA(buf);
+
+    return true; // 충돌
 }
 
 // Sphere-Sphere 충돌 검사
@@ -803,18 +838,50 @@ void CollisionSystem::ResolveCollisions() {
         XMVECTOR relativeVel = velB - velA;
         float velAlongNormal = XMVectorGetX(XMVector3Dot(relativeVel, normal));
 
+        char buf[128];
+        sprintf_s(buf, "velAlongNormal: %.3f\n", velAlongNormal);
+        OutputDebugStringA(buf);
+
         // 두 물체가 서로 멀어지고 있다면 처리할 필요 없음
         if (velAlongNormal <= 0) {
-            float e = (rbA && rbB) ? min(rbA->restitution, rbB->restitution) : (rbA ? rbA->restitution : (rbB ? rbB->restitution : 0.0f));
+            float e = (rbA && rbB) ? min(rbA->restitution, rbB->restitution) :
+                (rbA ? rbA->restitution : (rbB ? rbB->restitution : 0.0f));
             float j = -(1.0f + e) * velAlongNormal;
             j /= totalInvMass;
             XMVECTOR impulse = normal * j;
 
+            // 1) 선형 속도 보정
             if (rbA && !rbA->isKinematic) {
                 XMStoreFloat3(&rbA->velocity, velA - impulse * invMassA);
             }
             if (rbB && !rbB->isKinematic) {
                 XMStoreFloat3(&rbB->velocity, velB + impulse * invMassB);
+            }
+
+            // 2) 회전 토크 추가
+            XMVECTOR contactPoint = XMLoadFloat3(&collA->contactPoint);
+            XMVECTOR centerA = XMLoadFloat3(&transA->position);
+            XMVECTOR centerB = XMLoadFloat3(&transB->position);
+
+            if (rbA && !rbA->isKinematic) {
+                XMVECTOR rA = contactPoint - centerA;
+                XMVECTOR torqueA = XMVector3Cross(rA, -impulse);
+                float torqueScale = 10.2f; // 필요하면 세기 조절
+                torqueA = XMVectorScale(torqueA, torqueScale);
+                XMFLOAT3 torqueA3;
+                XMStoreFloat3(&torqueA3, torqueA);
+                rbA->AddTorque(torqueA3);
+                OutputDebugStringA("rbA");
+            }
+            if (rbB && !rbB->isKinematic) {
+                XMVECTOR rB = contactPoint - centerB;
+                XMVECTOR torqueB = XMVector3Cross(rB, impulse);
+                float torqueScale = 10.2f;
+                torqueB = XMVectorScale(torqueB, torqueScale);
+                XMFLOAT3 torqueB3;
+                XMStoreFloat3(&torqueB3, torqueB);
+                rbB->AddTorque(torqueB3);
+                OutputDebugStringA("rbB");
             }
         }
 

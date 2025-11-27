@@ -25,6 +25,10 @@ private:
 
     void ApplySlopeForce(Entity* entity, const XMFLOAT3& contactNormal);
 
+    //회전운동
+    void IntegrateAngularVelocity(Entity* entity, float deltaTime);
+    void IntegrateRotation(Entity* entity, float deltaTime);
+
 private:
     PhysicsWorld* m_PhysicsWorld;
     std::vector<Entity*> m_Entities;

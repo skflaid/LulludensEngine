@@ -35,24 +35,28 @@ void DynamicsSystem::Update(float deltaTime) {
         auto* rb = entity->GetComponent<RigidbodyComponent>();
         if (!rb) continue;
 
-        // 1. Èû ´©Àû±â ÃÊ±âÈ­
+        // 1. íž˜ ëˆ„ì ê¸° ì´ˆê¸°í™”
         rb->ClearForces();
 
-        // 2. Áß·Â Àû¿ë (´Ü¼øÈ÷ ¾Æ·¡·Î ÇâÇÏ´Â ÈûÀ» ´õÇÔ)
+        // 2. ì¤‘ë ¥ ì ìš© (ë‹¨ìˆœížˆ ì•„ëž˜ë¡œ í–¥í•˜ëŠ” íž˜ì„ ë”í•¨)
         ApplyGravity(entity, deltaTime);
 
-        // 3. ´Ù¸¥ ¸ðµç Èû(¼öÁ÷ Ç×·Â, ¸¶Âû·Â µî)À» °è»êÇÏ¿© Áß·ÂÀ» Á¶Á¤
+        // 3. ë‹¤ë¥¸ ëª¨ë“  íž˜(ìˆ˜ì§ í•­ë ¥, ë§ˆì°°ë ¥ ë“±)ì„ ê³„ì‚°í•˜ì—¬ ì¤‘ë ¥ì„ ì¡°ì •
         ApplyForces(entity, deltaTime);
 
-        // 4. ÃÖÁ¾ ÈûÀ» ¹ÙÅÁÀ¸·Î ¼Óµµ¿Í À§Ä¡ °è»ê
+        // 4. ìµœì¢… íž˜ì„ ë°”íƒ•ìœ¼ë¡œ ì†ë„ì™€ ìœ„ì¹˜ ê³„ì‚°
         IntegrateVelocity(entity, deltaTime);
         IntegratePosition(entity, deltaTime);
+
+        //5. íšŒì „ ê³„ì‚°
+        IntegrateAngularVelocity(entity, deltaTime);
+        IntegrateRotation(entity, deltaTime);
     }
 }
 
 void DynamicsSystem::ApplyGravity(Entity* entity, float deltaTime) {
     auto* rb = entity->GetComponent<RigidbodyComponent>();
-    // useGravity°¡ trueÀÌ¸é ÀÏ´Ü Áß·ÂÀ» ´õÇÕ´Ï´Ù.
+    // useGravityê°€ trueì´ë©´ ì¼ë‹¨ ì¤‘ë ¥ì„ ë”í•©ë‹ˆë‹¤.
     if (rb->useGravity && !rb->isKinematic) {
         rb->AddForce(m_PhysicsWorld->GetGravity());
     }
@@ -65,37 +69,37 @@ void DynamicsSystem::ApplyForces(Entity* entity, float deltaTime) {
 
     auto* collider = entity->GetCollider();
 
-    // ¹°Ã¼°¡ ¾îµò°¡¿¡ Á¢ÃËÇÏ°í ÀÖÀ» ¶§¸¸ ÀÛµ¿
+    // ë¬¼ì²´ê°€ ì–´ë”˜ê°€ì— ì ‘ì´‰í•˜ê³  ìžˆì„ ë•Œë§Œ ìž‘ë™
     if (collider && collider->hasContact) {
-        // ÇöÀç±îÁö ´©ÀûµÈ Èû (Áö±ÝÀº Áß·Â¸¸ µé¾îÀÖÀ½)
+        // í˜„ìž¬ê¹Œì§€ ëˆ„ì ëœ íž˜ (ì§€ê¸ˆì€ ì¤‘ë ¥ë§Œ ë“¤ì–´ìžˆìŒ)
         XMVECTOR totalForce = XMLoadFloat3(&rb->forceAccumulator);
 
-        // Á¢ÃË¸éÀÇ ¹ý¼± º¤ÅÍ
+        // ì ‘ì´‰ë©´ì˜ ë²•ì„  ë²¡í„°
         XMVECTOR normal = XMLoadFloat3(&collider->contactNormal);
         normal = XMVector3Normalize(normal);
 
-        // 1. ¼öÁ÷ Ç×·Â °è»ê: ÇöÀç Èû(Áß·Â)¿¡¼­ ¹ý¼± ¹æÇâ ¼ººÐ Á¦°Å
+        // 1. ìˆ˜ì§ í•­ë ¥ ê³„ì‚°: í˜„ìž¬ íž˜(ì¤‘ë ¥)ì—ì„œ ë²•ì„  ë°©í–¥ ì„±ë¶„ ì œê±°
         XMVECTOR normalForceComponent = XMVector3Dot(totalForce, normal) * normal;
         totalForce -= normalForceComponent;
 
-        // --- 2. ¸¶Âû·Â Ãß°¡ (ÀÌ ºÎºÐÀÌ ÇÙ½É) ---
+        // --- 2. ë§ˆì°°ë ¥ ì¶”ê°€ (ì´ ë¶€ë¶„ì´ í•µì‹¬) ---
         XMVECTOR velocity = XMLoadFloat3(&rb->velocity);
 
-        // ¼Óµµ°¡ °ÅÀÇ 0ÀÌ ¾Æ´Ï¸é ¸¶Âû·Â °è»ê
+        // ì†ë„ê°€ ê±°ì˜ 0ì´ ì•„ë‹ˆë©´ ë§ˆì°°ë ¥ ê³„ì‚°
         if (XMVectorGetX(XMVector3LengthSq(velocity)) > 1e-6f) {
-            // ¹Ì²ô·¯Áö´Â ¼ÓµµÀÇ ¹Ý´ë ¹æÇâ º¤ÅÍ
+            // ë¯¸ë„ëŸ¬ì§€ëŠ” ì†ë„ì˜ ë°˜ëŒ€ ë°©í–¥ ë²¡í„°
             XMVECTOR frictionDir = -XMVector3Normalize(velocity);
 
-            // ¸¶Âû·ÂÀÇ Å©±â´Â º¸Åë ¸¶Âû °è¼ö¿Í ¼öÁ÷ Ç×·ÂÀÇ Å©±â¿¡ ºñ·ÊÇÕ´Ï´Ù.
-            // ¿©±â¼­´Â °£´ÜÇÏ°Ô ¸¶Âû °è¼ö¸¸Å­ÀÇ ÈûÀ» Àû¿ëÇÕ´Ï´Ù.
-            float frictionMagnitude = rb->friction; // RigidbodyComponent¿¡ friction º¯¼ö Ãß°¡
+            // ë§ˆì°°ë ¥ì˜ í¬ê¸°ëŠ” ë³´í†µ ë§ˆì°° ê³„ìˆ˜ì™€ ìˆ˜ì§ í•­ë ¥ì˜ í¬ê¸°ì— ë¹„ë¡€í•©ë‹ˆë‹¤.
+            // ì—¬ê¸°ì„œëŠ” ê°„ë‹¨í•˜ê²Œ ë§ˆì°° ê³„ìˆ˜ë§Œí¼ì˜ íž˜ì„ ì ìš©í•©ë‹ˆë‹¤.
+            float frictionMagnitude = rb->friction; // RigidbodyComponentì— friction ë³€ìˆ˜ ì¶”ê°€
             XMVECTOR frictionForce = frictionDir * frictionMagnitude;
 
-            // ÃÖÁ¾ Èû¿¡ ¸¶Âû·ÂÀ» ´õÇØÁÝ´Ï´Ù (½ÇÁ¦·Î´Â »©´Â È¿°ú)
+            // ìµœì¢… íž˜ì— ë§ˆì°°ë ¥ì„ ë”í•´ì¤ë‹ˆë‹¤ (ì‹¤ì œë¡œëŠ” ë¹¼ëŠ” íš¨ê³¼)
             totalForce += frictionForce;
         }
 
-        // 3. Á¶Á¤µÈ ÃÖÁ¾ ÈûÀ» ´Ù½Ã forceAccumulator¿¡ ÀúÀå
+        // 3. ì¡°ì •ëœ ìµœì¢… íž˜ì„ ë‹¤ì‹œ forceAccumulatorì— ì €ìž¥
         XMStoreFloat3(&rb->forceAccumulator, totalForce);
     }
 }
@@ -145,4 +149,51 @@ void DynamicsSystem::IntegratePosition(Entity* entity, float deltaTime) {
     XMVECTOR vel = XMLoadFloat3(&rb->velocity);
     pos = XMVectorAdd(pos, XMVectorScale(vel, deltaTime));
     XMStoreFloat3(&transform->position, pos);
+}
+
+void DynamicsSystem::IntegrateAngularVelocity(Entity* entity, float deltaTime) {
+    auto* rb = entity->GetComponent<RigidbodyComponent>();
+    if (rb->isKinematic) return;
+
+    // Ï„ -> Î± = Ï„ / I
+    XMVECTOR torque = XMLoadFloat3(&rb->torqueAccumulator);
+
+    // ê´€ì„± 0 ë°©ì§€
+    float inertia = (rb->inertia != 0.0f) ? rb->inertia : 1.0f;
+    XMVECTOR angularAcc = XMVectorScale(torque, 1.0f / inertia);
+
+    // Ï‰ = Ï‰0 + Î± * dt
+    XMVECTOR angVel = XMLoadFloat3(&rb->angularVelocity);
+    angVel = XMVectorAdd(angVel, XMVectorScale(angularAcc, deltaTime));
+
+    // ê° ì €í•­(ê°ì‡ ) ì ìš©
+    float damping = 1.0f - rb->angularDrag;
+    if (damping < 0.0f) damping = 0.0f;
+    if (damping > 1.0f) damping = 1.0f;
+    angVel = XMVectorScale(angVel, damping);
+
+    XMStoreFloat3(&rb->angularVelocity, angVel);
+
+    XMFLOAT3 w;
+    XMStoreFloat3(&w, angVel);
+    char buf[128];
+    sprintf_s(buf, "w: %.3f, %.3f, %.3f\n", w.x, w.y, w.z);
+    OutputDebugStringA(buf);
+}
+
+void DynamicsSystem::IntegrateRotation(Entity* entity, float deltaTime) {
+    auto* rb = entity->GetComponent<RigidbodyComponent>();
+    auto* transform = entity->GetComponent<TransformComponent>();
+    if (rb->isKinematic || !transform) return;
+
+    // í˜„ìž¬ ê°ì†ë„(ë¼ë””ì•ˆ/ì´ˆ)
+    XMVECTOR angVel = XMLoadFloat3(&rb->angularVelocity);
+
+    // Î”rotation = Ï‰ * dt
+    XMVECTOR deltaRot = XMVectorScale(angVel, deltaTime);
+
+    XMVECTOR rot = XMLoadFloat3(&transform->rotation);
+    rot = XMVectorAdd(rot, deltaRot);
+
+    XMStoreFloat3(&transform->rotation, rot);
 }

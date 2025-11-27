@@ -16,10 +16,11 @@ struct RigidbodyComponent : public IComponent {
     bool useGravity = true;
     bool isKinematic = false;
 
-    float restitution = 0.3f;  // ¹Ý¹ß °è¼ö (0~1)
-    float friction = 0.5f;     // ¸¶Âû °è¼ö (0~1)
-    float drag = 0.01f;        // °ø±â ÀúÇ×
+    float restitution = 0.3f;  // ë°˜ë°œ ê³„ìˆ˜ (0~1)
+    float friction = 0.5f;     // ë§ˆì°° ê³„ìˆ˜ (0~1)
+    float drag = 0.01f;        // ê³µê¸° ì €í•­
     float linearDamping = 0.05f;
+    float inertia = 1.0f;//ê´€ì„±
 
     // Force accumulation
     XMFLOAT3 forceAccumulator = { 0.0f, 0.0f, 0.0f };
