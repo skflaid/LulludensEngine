@@ -44,6 +44,7 @@ private:
     void RenderGBufferPass(UINT frameIndex);
     void RenderLightingPass(UINT frameIndex);
     void RenderSSGIPass(UINT frameIndex);
+    void RenderSSGIDenoisePass(UINT frameIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
 
@@ -54,6 +55,7 @@ private:
     void CreateGBufferPipelineState();
     void CreateLightingPipelineState();
     void CreateSSGIPipelineState();
+    void CreateSSGIDenoisePipelineState();
     void CreateConstantBuffer();
 
 private:
@@ -75,6 +77,8 @@ private:
     ComPtr<ID3D12PipelineState> m_LightingPipelineState;
     ComPtr<ID3D12RootSignature> m_SSGIRootSignature;
     ComPtr<ID3D12PipelineState> m_SSGIPipelineState;
+    ComPtr<ID3D12RootSignature> m_SSGIDenoiseRootSignature;
+    ComPtr<ID3D12PipelineState> m_SSGIDenoisePipelineState;
 
     // Shadow map 리소스 + DSV
     ComPtr<ID3D12Resource> m_ShadowMap;

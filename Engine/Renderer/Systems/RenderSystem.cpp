@@ -49,6 +49,7 @@ void RenderSystem::Initialize() {
     CreateShadowPipelineState();
     CreateLightingPipelineState();
     CreateSSGIPipelineState();
+    CreateSSGIDenoisePipelineState();
 }
 
 void RenderSystem::CreateConstantBuffer() {
@@ -451,6 +452,102 @@ void RenderSystem::CreateSSGIPipelineState() {
     ThrowIfFailed(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_SSGIPipelineState)));
 }
 
+void RenderSystem::CreateSSGIDenoisePipelineState() {
+    auto device = m_RendererCore->GetDevice();
+
+    // Root Signature (CBV b0 for Pass constants, DescriptorTable for Position, Normal, SSGI Input SRV, SSGI Output UAV)
+    D3D12_DESCRIPTOR_RANGE srvTable0[1] = {};
+    srvTable0[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable0[0].NumDescriptors = 1;
+    srvTable0[0].BaseShaderRegister = 0;  // Position (t0)
+    srvTable0[0].RegisterSpace = 0;
+    srvTable0[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE srvTable1[1] = {};
+    srvTable1[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable1[0].NumDescriptors = 1;
+    srvTable1[0].BaseShaderRegister = 1;  // Normal (t1)
+    srvTable1[0].RegisterSpace = 0;
+    srvTable1[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE srvTable2[1] = {};
+    srvTable2[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable2[0].NumDescriptors = 1;
+    srvTable2[0].BaseShaderRegister = 2;  // SSGI Input (t2)
+    srvTable2[0].RegisterSpace = 0;
+    srvTable2[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE uavTable[1] = {};
+    uavTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    uavTable[0].NumDescriptors = 1;
+    uavTable[0].BaseShaderRegister = 0;  // SSGI Output (u0)
+    uavTable[0].RegisterSpace = 0;
+    uavTable[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParameters[5] = {};
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[0].Descriptor.ShaderRegister = 0;
+    rootParameters[0].Descriptor.RegisterSpace = 0;
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[1].DescriptorTable.pDescriptorRanges = srvTable0;  // Position
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[2].DescriptorTable.pDescriptorRanges = srvTable1;  // Normal
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[3].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[3].DescriptorTable.pDescriptorRanges = srvTable2;  // SSGI Input SRV
+    rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[4].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[4].DescriptorTable.pDescriptorRanges = uavTable;  // SSGI Output UAV
+    rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.MipLODBias = 0;
+    samplerDesc.MaxAnisotropy = 0;
+    samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+    samplerDesc.MinLOD = 0.0f;
+    samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+    samplerDesc.ShaderRegister = 0;
+    samplerDesc.RegisterSpace = 0;
+    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+    rootDesc.NumParameters = 5;  // CBV(0) + Position SRV(1) + Normal SRV(2) + SSGI Input SRV(3) + SSGI Output UAV(4)
+    rootDesc.pParameters = rootParameters;
+    rootDesc.NumStaticSamplers = 1;
+    rootDesc.pStaticSamplers = &samplerDesc;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+    ComPtr<ID3DBlob> sig, err;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&m_SSGIDenoiseRootSignature)));
+
+    const std::wstring shaderPath = L"Renderer/Shaders/SSGIDenoise.hlsl";
+    ComPtr<ID3DBlob> cs;
+    cs = d3dUtil::CompileShader(shaderPath, nullptr, "CS", "cs_5_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC pso = {};
+    pso.pRootSignature = m_SSGIDenoiseRootSignature.Get();
+    pso.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    ThrowIfFailed(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_SSGIDenoisePipelineState)));
+}
+
 void RenderSystem::CreateShadowResources() {
     auto device = m_RendererCore->GetDevice();
 
@@ -728,6 +825,9 @@ void RenderSystem::Render() {
     // SSGI Pass (항상 실행)
     RenderSSGIPass(frameIndex);
 
+    // SSGI Denoise Pass (SSGI 결과를 필터링)
+    RenderSSGIDenoisePass(frameIndex);
+
     // Lighting Pass (모드에 따라 다른 결과 표시)
     RenderLightingPass(frameIndex);
 
@@ -964,16 +1064,75 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     uint32_t dispatchY = (height + 7) / 8;
     commandList->Dispatch(dispatchX, dispatchY, 1);
 
-    // Transition SSGI buffer to pixel shader resource state
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    commandList->ResourceBarrier(1, &barrier);
+    // SSGI 버퍼는 UNORDERED_ACCESS 상태로 유지
+    // Denoise 패스에서 SRV로 읽기 위해 상태 전환할 예정
     
     // 첫 프레임 플래그 해제
     m_IsFirstSSGIFrame = false;
+}
+
+void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
+    auto commandList = m_RendererCore->GetCommandList();
+    auto device = m_RendererCore->GetDevice();
+
+    // SSGI 버퍼를 SRV로 읽기 위한 상태 전환
+    // SSGI 패스에서 UNORDERED_ACCESS 상태로 출력했으므로,
+    // NON_PIXEL_SHADER_RESOURCE로 전환하여 compute shader에서 SRV로 읽을 수 있게 함
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // SSGI 패스에서 UAV로 출력한 상태
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;  // Denoise에서 SRV로 읽기
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &barrier);
+
+    // Set pipeline state
+    commandList->SetPipelineState(m_SSGIDenoisePipelineState.Get());
+    commandList->SetComputeRootSignature(m_SSGIDenoiseRootSignature.Get());
+
+    // Set pass constant buffer
+    D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetComputeRootConstantBufferView(0, passCBAddress);
+
+    // Set descriptor heap (G-Buffer SRV Heap에 모든 descriptor가 포함되어 있음)
+    ID3D12DescriptorHeap* heaps[] = { m_RendererCore->GetGBufferSRVHeap() };
+    commandList->SetDescriptorHeaps(1, heaps);
+
+    // Set G-Buffer SRVs (Position=t0, Normal=t1)
+    D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
+    
+    // Position (index 0)
+    commandList->SetComputeRootDescriptorTable(1, srvHandle);
+    
+    // Normal (index 1)
+    D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = srvHandle;
+    normalHandle.ptr += m_RendererCore->GetGBufferSRVDescriptorSize();
+    commandList->SetComputeRootDescriptorTable(2, normalHandle);
+    
+    // Set SSGI Input SRV (G-Buffer SRV Heap의 4번째 슬롯)
+    D3D12_GPU_DESCRIPTOR_HANDLE ssgiSrvHandle = m_RendererCore->GetSSGISRVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(3, ssgiSrvHandle);
+    
+    // Set SSGI Output UAV (G-Buffer SRV Heap의 6번째 슬롯)
+    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(4, uavHandle);
+
+    // SSGI 버퍼를 UAV로 쓰기 위해 상태 전환
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // Denoise 출력용
+    commandList->ResourceBarrier(1, &barrier);
+
+    // Dispatch compute shader (8x8 thread groups)
+    uint32_t width = m_RendererCore->GetWidth();
+    uint32_t height = m_RendererCore->GetHeight();
+    uint32_t dispatchX = (width + 7) / 8;
+    uint32_t dispatchY = (height + 7) / 8;
+    commandList->Dispatch(dispatchX, dispatchY, 1);
+
+    // SSGI 버퍼를 pixel shader resource 상태로 전환 (Lighting 패스에서 사용)
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    commandList->ResourceBarrier(1, &barrier);
 }
 
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {
