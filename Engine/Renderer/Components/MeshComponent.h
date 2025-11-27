@@ -11,6 +11,10 @@ struct Vertex {
     XMFLOAT3 position;
     XMFLOAT3 normal;
     XMFLOAT2 texCoord;
+
+    // 스켈레탈용 (지금은 안 써도 괜찮고, 나중에 VS에서 사용할 예정)
+    uint32_t boneIndices[4] = { 0, 0, 0, 0 };
+    float    boneWeights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 struct MeshComponent : public IComponent {

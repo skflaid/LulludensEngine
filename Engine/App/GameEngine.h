@@ -10,17 +10,17 @@ class PhysicsScheduler;
 class RenderSystem;
 class Entity;
 class CameraSystem;
+class AnimationSystem;
 
 class GameEngine
 {
 public:
-    GameEngine();                 // ����
-    ~GameEngine();                // ����
+    GameEngine();                 
+    ~GameEngine();                
 
     GameEngine(const GameEngine&) = delete;
     GameEngine& operator=(const GameEngine&) = delete;
 
-    // �̵��� ����� '����' �ϰ�, ���Ǵ� .cpp����
     GameEngine(GameEngine&&) noexcept;
     GameEngine& operator=(GameEngine&&) noexcept;
 
@@ -29,7 +29,6 @@ public:
     void Render();
     void Shutdown();
 
-    // ��ƼƼ ���ٿ� �ּ� �������̽��� ����
     uint64_t GetEntityCount() const;
     Entity* GetEntityByIndex(uint64_t index);
 
@@ -51,7 +50,9 @@ private:
     std::shared_ptr<PhysicsWorld> m_PhysicsWorld;
     std::unique_ptr<PhysicsScheduler> m_PhysicsScheduler;
     std::unique_ptr<RenderSystem>    m_RenderSystem;
-    std::vector<std::unique_ptr<Entity>> m_Entities;
     std::unique_ptr<CameraSystem> m_CameraSystem;
+    std::unique_ptr<AnimationSystem> m_AnimationSystem;
+
+    std::vector<std::unique_ptr<Entity>> m_Entities;
     Entity* m_MainCamera = nullptr;
 };
