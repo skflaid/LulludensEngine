@@ -37,6 +37,7 @@ public:
     ID3D12Resource* GetGBufferMaterial() const { return m_GBufferMaterial.Get(); }
     ID3D12DescriptorHeap* GetGBufferRTVHeap() const { return m_GBufferRTVHeap.Get(); }
     ID3D12DescriptorHeap* GetGBufferSRVHeap() const { return m_GBufferSRVHeap.Get(); }
+    uint32_t GetGBufferSRVDescriptorSize() const { return m_GBufferSRVDescriptorSize; }
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferRTVHandle(int index) const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferSRVHandle(int index) const;
 
@@ -47,6 +48,7 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGIRTVHandle() const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGISRVHandle() const;
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandle() const;
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGISRVHandleFromGBufferHeap() const;
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandleFromGBufferHeap() const;
 
 private:

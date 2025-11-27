@@ -275,5 +275,8 @@
     <None Include="Renderer\Shaders\ShadowMap.hlsl">
       <Filter>소스 파일\Renderer\Shaders</Filter>
     </None>
+    <None Include="Renderer\Shaders\SSGIDenoise.hlsl">
+      <Filter>소스 파일\Renderer\Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

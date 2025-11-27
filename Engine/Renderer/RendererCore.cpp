@@ -365,10 +365,17 @@ D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIUAVHandle() const {
     return handle;
 }
 
+D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGISRVHandleFromGBufferHeap() const {
+    D3D12_GPU_DESCRIPTOR_HANDLE handle = m_GBufferSRVHeap->GetGPUDescriptorHandleForHeapStart();
+    // 0-3: G-Buffer SRV, 4: SSGI SRV, 5: ShadowMap SRV, 6: SSGI UAV
+    handle.ptr += 4 * m_GBufferSRVDescriptorSize; // SSGI SRV는 index 4
+    return handle;
+}
+
 D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIUAVHandleFromGBufferHeap() const {
     D3D12_GPU_DESCRIPTOR_HANDLE handle = m_GBufferSRVHeap->GetGPUDescriptorHandleForHeapStart();
     // 0-3: G-Buffer SRV, 4: SSGI SRV, 5: ShadowMap SRV, 6: SSGI UAV
-    handle.ptr += 6 * m_GBufferSRVDescriptorSize; // 5 → 6
+    handle.ptr += 6 * m_GBufferSRVDescriptorSize; // SSGI UAV는 index 6
     return handle;
 }
 
