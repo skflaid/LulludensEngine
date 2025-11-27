@@ -6,6 +6,7 @@
 #include "../Common/d3dUtil.h"
 #include "Renderer/Components/CameraComponent.h"
 #include <d3dcompiler.h>
+#include "Renderer/Components/SkeletonComponent.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -57,6 +58,7 @@ void RenderSystem::CreateConstantBuffer() {
     m_ObjectConstantBufferSize = (sizeof(ObjectConstants) + 255) & ~255;
     m_MaterialConstantBufferSize = (sizeof(RenderMaterialConstants) + 255) & ~255;
     m_PassConstantBufferSize = (sizeof(PassConstants) + 255) & ~255;
+    m_SkinningConstantBufferSize = (sizeof(SkinningConstants) + 255) & ~255;
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -110,6 +112,18 @@ void RenderSystem::CreateConstantBuffer() {
             IID_PPV_ARGS(&m_PassConstantBuffers[i])
         );
         m_PassConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_PassConstantBufferDataBegin[i]));
+
+        resourceDesc.Width = m_SkinningConstantBufferSize;
+        device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&m_SkinningConstantBuffers[i])
+        );
+        m_SkinningConstantBuffers[i]->Map(0, &readRange,
+            reinterpret_cast<void**>(&m_SkinningConstantBufferDataBegin[i]));
     }
 }
 
@@ -583,6 +597,48 @@ void RenderSystem::CreateShadowPipelineState() {
 
 void RenderSystem::Update(float deltaTime) {
     m_TotalTime += deltaTime;
+
+    // 1) 스켈레톤 가진 엔티티 하나 찾기
+    Entity* skinnedEntity = nullptr;
+    for (Entity* e : m_RenderableEntities) {
+        if (e && e->HasComponent<SkeletonComponent>()) {
+            skinnedEntity = e;
+            break;
+        }
+    }
+    if (!skinnedEntity) return;
+
+    auto* skeleton = skinnedEntity->GetComponent<SkeletonComponent>();
+    if (!skeleton) return;
+    if (skeleton->FinalBoneTransforms.empty()) return;
+
+    // 2) FinalBoneTransforms → SkinningConstants 복사
+    SkinningConstants skin = {};
+    const uint32_t boneCount = (std::min)(
+        static_cast<uint32_t>(skeleton->FinalBoneTransforms.size()),
+        static_cast<uint32_t>(MAX_BONES)
+        );
+
+    for (size_t i = 0; i < boneCount; ++i) {
+        XMMATRIX M = XMLoadFloat4x4(&skeleton->FinalBoneTransforms[i]);
+        XMStoreFloat4x4(&skin.BoneTransforms[i], XMMatrixTranspose(M));
+    }
+    // 남는 슬롯은 Identity로
+    for (size_t i = boneCount; i < MAX_BONES; ++i) {
+        DirectX::XMStoreFloat4x4(
+            &skin.BoneTransforms[i],
+            DirectX::XMMatrixIdentity()
+        );
+    }
+
+    // 3) 모든 프레임의 cbSkinning 버퍼에 써주기 (FrameCount 개)
+    for (UINT frame = 0; frame < FrameCount; ++frame) {
+        memcpy(
+            m_SkinningConstantBufferDataBegin[frame],
+            &skin,
+            sizeof(SkinningConstants)
+        );
+    }
 }
 
 void RenderSystem::Shutdown() {
@@ -1111,6 +1167,11 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
         D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
         commandList->SetGraphicsRootConstantBufferView(2, passCBAddress);
     }
+
+    // Skinning constants (b3) - 일단 전 오브젝트 공통으로 frameIndex 기준 0번만 사용
+    D3D12_GPU_VIRTUAL_ADDRESS skinCBAddress =
+        m_SkinningConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetGraphicsRootConstantBufferView(3, skinCBAddress);
 
     // 메시 렌더링
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);

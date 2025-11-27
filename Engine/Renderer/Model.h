@@ -23,7 +23,7 @@ struct ModelVertex {
 };
 
 // 재질 정보 (PBR 기반을 가정하지만, 일단은 텍스처만)
-struct Material {
+struct ModelMaterial {
     std::string Name;
     // 텍스처 리소스와 SRV 핸들 정보 등
     ComPtr<ID3D12Resource> DiffuseSrvHeap;
@@ -55,6 +55,7 @@ struct ModelBone {
     std::string Name;
     int ParentIndex = -1;             // -1이면 루트
     DirectX::XMFLOAT4X4 Offset;       // inverse bind pose (aiBone::mOffsetMatrix)
+    DirectX::XMFLOAT4X4 BindTransform; // 원래 바인드 포즈
 };
 
 struct ModelKeyframeVec3 {
@@ -85,7 +86,7 @@ struct ModelAnimationClip {
 class Model {
 public:
     std::vector<std::unique_ptr<Mesh>> Meshes;
-    std::vector<std::unique_ptr<Material>> Materials;
+    std::vector<std::unique_ptr<ModelMaterial>> Materials;
 
     // --- 스켈레톤 + 애니메이션 ---
     std::vector<ModelBone> Bones;                          // 본 리스트

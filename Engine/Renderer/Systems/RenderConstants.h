@@ -7,6 +7,10 @@ using namespace DirectX;
 // HLSL 정렬 규칙에 맞추기 위해 패킹 사용
 #pragma pack(push, 16)
 
+struct SkinningConstants {
+    XMFLOAT4X4 BoneTransforms[128]; // HLSL과 동일 크기
+};
+
 struct ObjectConstants {
     XMFLOAT4X4 gWorld;
     XMFLOAT4X4 gWorldInvTranspose;

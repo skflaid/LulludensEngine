@@ -61,6 +61,7 @@ struct VertexIn
     float4 BoneWeights : BLENDWEIGHT;  // 새로 추가
 };
 
+
 struct VertexOut
 {
     float4 PosH : SV_POSITION;

@@ -9,6 +9,7 @@
 #include <DirectXMath.h>
 
 using namespace DirectX;
+static constexpr UINT MAX_BONES = 128;
 
 class GameEngine;
 
@@ -114,4 +115,9 @@ private:
     ComPtr<ID3D12Resource> m_PassConstantBuffers[FrameCount];
     UINT8* m_PassConstantBufferDataBegin[FrameCount];
     UINT m_PassConstantBufferSize;
+
+    // skinned (b3)
+    UINT m_SkinningConstantBufferSize = 0;
+    ComPtr<ID3D12Resource> m_SkinningConstantBuffers[FrameCount];
+    BYTE* m_SkinningConstantBufferDataBegin[FrameCount]{};
 };

@@ -40,6 +40,11 @@ namespace
         newBone.ParentIndex = -1;
         newBone.Offset = ToXMFLOAT4X4(bone->mOffsetMatrix);
 
+        // Bind pose = inverse of Offset
+        XMMATRIX offsetM = XMLoadFloat4x4(&newBone.Offset);
+        XMMATRIX bindM = XMMatrixInverse(nullptr, offsetM);
+        XMStoreFloat4x4(&newBone.BindTransform, bindM);
+
         int index = static_cast<int>(model->Bones.size());
         model->Bones.push_back(newBone);
         model->BoneNameToIndex[name] = index;
@@ -167,7 +172,7 @@ void FBXLoader::ProcessMaterials(const aiScene* scene, Model* outModel) {
     outModel->Materials.resize(scene->mNumMaterials);
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
         aiMaterial* mat = scene->mMaterials[i];
-        auto material = std::make_unique<Material>();
+        auto material = std::make_unique<ModelMaterial>();
 
         material->Name = mat->GetName().C_Str();
 

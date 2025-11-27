@@ -170,7 +170,8 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
                 continue;
             }
         }
-        XMStoreFloat4x4(&localTransforms[i], XMMatrixIdentity());
+        //XMStoreFloat4x4(&localTransforms[i], XMMatrixIdentity());
+        localTransforms[i] = skeleton->Bones[i].BindTransform;
     }
 
     // 계층 구조를 따라 월드 행렬 계산

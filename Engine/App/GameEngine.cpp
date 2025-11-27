@@ -16,6 +16,8 @@
 #include "Renderer/Systems/CameraSystem.h" 
 #include "Renderer/Components/CameraComponent.h" 
 #include "Renderer/Systems/AnimationSystem.h"
+#include "Renderer/Components/SkeletonComponent.h"
+#include "Renderer/Components/SkeletalAnimationComponent.h"
 
 #include "Renderer/Components/TransformAnimationComponent.h"
 // Model.h는 FBXLoader.h에서 이미 포함되므로 여기서는 제거
@@ -150,17 +152,19 @@ void GameEngine::CreateEntities()
 
     // FBX 모델 로드 예제
     // 주의: 실제 FBX 파일 경로로 변경해야 합니다.
-    LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f, true);
+    //LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f, true);
+    LoadFBXModel("Models/Dancing Twerk.fbx", 1, 0.0f, 0.0f, 0.0f, 0.05f, false);
 }
 
-void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, float pitch, float yaw, float roll, bool attachMeshCollider)
+void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId,
+    float pitch, float yaw, float roll, float scale, bool attachMeshCollider)
 {
     // 1. FBXLoader를 사용하여 FBX 파일 로드
     FBXLoader loader;
     Model* model = loader.Load(filePath);
-    
+
     if (!model) {
-        // 로드 실패 처리 (로그 출력 등)
+        // 로드 실패 처리
         // Log::Error("Failed to load FBX file: %s", filePath.c_str());
         return;
     }
@@ -168,41 +172,66 @@ void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId, fl
     // 2. Entity 생성 및 TransformComponent 추가
     auto fbxEntity = std::make_unique<Entity>(entityId);
     auto transform = fbxEntity->AddComponent<TransformComponent>();
-    transform->SetPosition(0.0f, 2.0f, 0.0f);  // 위치 설정
-    
-    // 회전 설정 방법 1: 각도(degree) 단위로 설정 (추천)
-    transform->SetRotationDegrees(pitch, yaw, roll);   // Y축으로 45도 회전 (테스트용)
-    // transform->SetRotationDegrees(0.0f, 0.0f, 0.0f);   // 회전 없음
-    
-    // 회전 설정 방법 2: 라디안 단위로 직접 설정
-    // transform->SetRotation(0.0f, XM_PI / 4.0f, 0.0f);   // Y축으로 45도 회전
-    // Pitch (X축), Yaw (Y축), Roll (Z축)
-    
-    transform->SetScale(1.0f, 1.0f, 1.0f);     // 스케일 설정
+    transform->SetPosition(0.0f, 2.0f, 0.0f);
+    transform->SetRotationDegrees(pitch, yaw, roll);
+    transform->SetScale(scale, scale, scale);
 
     // 3. Model을 Entity로 변환 (모든 메시를 하나로 병합)
-    if (ModelInstantiation::InstantiateToEntity(model, fbxEntity.get(), true)) {
-        // 4. RenderSystem에 등록 (GPU 버퍼 자동 생성)
-        m_RenderSystem->RegisterEntity(fbxEntity.get());
-        
+    bool instantiated = ModelInstantiation::InstantiateToEntity(model, fbxEntity.get(), true);
+
+    // === 3-1. 스켈레톤 / 애니메이션 컴포넌트 붙이기 ===
+    // FBXLoader가 채워준 Bones / Animations를 그대로 복사
+    if (!model->Bones.empty()) {
+        auto* skeleton = fbxEntity->AddComponent<SkeletonComponent>();
+
+        skeleton->Bones = model->Bones;
+        skeleton->BoneNameToIndex = model->BoneNameToIndex;
+        skeleton->Animations = model->Animations;
+
+        // FinalBoneTransforms 초기값: 전부 단위 행렬
+        skeleton->FinalBoneTransforms.resize(skeleton->Bones.size());
+        for (auto& m : skeleton->FinalBoneTransforms) {
+            XMStoreFloat4x4(&m, XMMatrixIdentity());
+        }
+
+        // 애니메이션 재생 상태 컴포넌트
+        auto* animComp = fbxEntity->AddComponent<SkeletalAnimationComponent>();
+        if (!skeleton->Animations.empty()) {
+            // 첫 번째 클립을 기본으로 재생
+            animComp->CurrentClipName = skeleton->Animations[0].Name;
+        }
+        else {
+            animComp->CurrentClipName.clear();
+        }
+        animComp->CurrentTime = 0.0;
+        animComp->PlayRate = 1.0f;
+        animComp->Loop = true;
+        animComp->Playing = true;
+    }
+
+    // 4. 메시 인스턴스화에 성공했을 때만 렌더/피직스 등록
+    if (instantiated) {
+        // RenderSystem에 등록 (GPU 버퍼 자동 생성)
+        if (m_RenderSystem) {
+            m_RenderSystem->RegisterEntity(fbxEntity.get());
+        }
+
         // 5. MeshCollider 추가 (옵션)
         if (attachMeshCollider) {
             auto* meshComp = fbxEntity->GetComponent<MeshComponent>();
             if (meshComp) {
                 auto* collider = fbxEntity->AddComponent<MeshCollider>();
                 collider->meshComponent = meshComp;
-                m_PhysicsWorld->RegisterEntity(fbxEntity.get());
+                if (m_PhysicsWorld) {
+                    m_PhysicsWorld->RegisterEntity(fbxEntity.get());
+                }
             }
         }
-
-        // 6. Entity를 엔진에 추가
-        m_Entities.push_back(std::move(fbxEntity));
-    }
-    else {
-        // 변환 실패 처리
-        // Log::Error("Failed to instantiate model to entity");
     }
 
-    // 7. Model 메모리 해제 (FBXLoader가 new로 할당했으므로 delete 필요)
+    // 6. Entity를 엔진에 추가
+    m_Entities.push_back(std::move(fbxEntity));
+
+    // 7. Model 메모리 해제
     delete model;
 }
