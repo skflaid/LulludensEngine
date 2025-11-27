@@ -116,8 +116,8 @@ void RenderSystem::CreateConstantBuffer() {
 void RenderSystem::CreateGBufferPipelineState() {
     auto device = m_RendererCore->GetDevice();
 
-    // Root Signature (CBV b0, b1, b2)
-    D3D12_ROOT_PARAMETER rootParameters[3] = {};
+    // Root Signature (CBV b0, b1, b2, b3)
+    D3D12_ROOT_PARAMETER rootParameters[4] = {};
     
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
@@ -134,8 +134,16 @@ void RenderSystem::CreateGBufferPipelineState() {
     rootParameters[2].Descriptor.RegisterSpace = 0;
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
+    // b3 : cbSkinning (본 팔레트)
+    rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[3].Descriptor.ShaderRegister = 3; // b3
+    rootParameters[3].Descriptor.RegisterSpace = 0;
+    rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    // (스키닝은 VS에서만 쓰니까 VERTEX로 좁혀도 되고, ALL로 둬도 됨)
+
+
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
-    rootDesc.NumParameters = 3;
+    rootDesc.NumParameters = _countof(rootParameters);
     rootDesc.pParameters = rootParameters;
     rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
@@ -150,9 +158,11 @@ void RenderSystem::CreateGBufferPipelineState() {
     ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
 
     D3D12_INPUT_ELEMENT_DESC inputElements[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "POSITION",     0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",       0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD",     0, DXGI_FORMAT_R32G32_FLOAT,       0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "BLENDINDICES", 0, DXGI_FORMAT_R32G32B32A32_UINT,  0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "BLENDWEIGHT",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 48, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     D3D12_BLEND_DESC blendDesc = {};
@@ -521,9 +531,11 @@ void RenderSystem::CreateShadowPipelineState() {
 
     // GBuffer와 동일한 인풋 레이아웃
     D3D12_INPUT_ELEMENT_DESC inputElements[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "POSITION",     0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",       0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD",     0, DXGI_FORMAT_R32G32_FLOAT,       0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "BLENDINDICES", 0, DXGI_FORMAT_R32G32B32A32_UINT,  0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "BLENDWEIGHT",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 48, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     D3D12_BLEND_DESC blendDesc = {};
