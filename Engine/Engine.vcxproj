@@ -212,6 +212,9 @@
     <None Include="Renderer\Shaders\SSGI.hlsl">
       <FileType>Document</FileType>
     </None>
+    <None Include="Renderer\Shaders\SSGIDenoise.hlsl">
+      <FileType>Document</FileType>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <None Include="Renderer\Shaders\ShadowMap.hlsl">

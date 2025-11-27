@@ -48,6 +48,7 @@ void RenderSystem::Initialize() {
     CreateShadowPipelineState();
     CreateLightingPipelineState();
     CreateSSGIPipelineState();
+    CreateSSGIDenoisePipelineState();
 }
 
 void RenderSystem::CreateConstantBuffer() {
@@ -435,6 +436,92 @@ void RenderSystem::CreateSSGIPipelineState() {
     pso.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
 
     ThrowIfFailed(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_SSGIPipelineState)));
+}
+
+void RenderSystem::CreateSSGIDenoisePipelineState() {
+    auto device = m_RendererCore->GetDevice();
+
+    // Root Signature: G-Buffer SRVs, Raw SSGI SRV, UAV for denoised output
+    D3D12_DESCRIPTOR_RANGE gbufferSrvTable[4] = {};
+    for (int i = 0; i < 4; ++i) {
+        gbufferSrvTable[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        gbufferSrvTable[i].NumDescriptors = 1;
+        gbufferSrvTable[i].BaseShaderRegister = i;
+        gbufferSrvTable[i].RegisterSpace = 0;
+        gbufferSrvTable[i].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    }
+
+    D3D12_DESCRIPTOR_RANGE ssgiInputRange = {};
+    ssgiInputRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    ssgiInputRange.NumDescriptors = 1;
+    ssgiInputRange.BaseShaderRegister = 4;
+    ssgiInputRange.RegisterSpace = 0;
+    ssgiInputRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_DESCRIPTOR_RANGE uavTable = {};
+    uavTable.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    uavTable.NumDescriptors = 1;
+    uavTable.BaseShaderRegister = 0;
+    uavTable.RegisterSpace = 0;
+    uavTable.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParameters[4] = {};
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[0].Descriptor.ShaderRegister = 0;
+    rootParameters[0].Descriptor.RegisterSpace = 0;
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[1].DescriptorTable.NumDescriptorRanges = 4;
+    rootParameters[1].DescriptorTable.pDescriptorRanges = gbufferSrvTable;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[2].DescriptorTable.pDescriptorRanges = &ssgiInputRange;
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[3].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[3].DescriptorTable.pDescriptorRanges = &uavTable;
+    rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.MipLODBias = 0;
+    samplerDesc.MaxAnisotropy = 0;
+    samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+    samplerDesc.MinLOD = 0.0f;
+    samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+    samplerDesc.ShaderRegister = 0;
+    samplerDesc.RegisterSpace = 0;
+    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+    rootDesc.NumParameters = 4;
+    rootDesc.pParameters = rootParameters;
+    rootDesc.NumStaticSamplers = 1;
+    rootDesc.pStaticSamplers = &samplerDesc;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+    ComPtr<ID3DBlob> sig, err;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&m_SSGIDenoiseRootSignature)));
+
+    const std::wstring shaderPath = L"Renderer/Shaders/SSGIDenoise.hlsl";
+    ComPtr<ID3DBlob> cs;
+    cs = d3dUtil::CompileShader(shaderPath, nullptr, "CS", "cs_5_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC pso = {};
+    pso.pRootSignature = m_SSGIDenoiseRootSignature.Get();
+    pso.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    ThrowIfFailed(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_SSGIDenoisePipelineState)));
 }
 
 void RenderSystem::CreateShadowResources() {
@@ -869,55 +956,93 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
 
-    // Transition SSGI buffer to unordered access state
-    // 첫 프레임에서는 이미 UNORDERED_ACCESS 상태이므로 barrier를 건너뜀
-    D3D12_RESOURCE_BARRIER barrier = {};
+    // Transition buffers for compute passes
+    std::vector<D3D12_RESOURCE_BARRIER> prePassBarriers;
+
+    if (!m_IsFirstSSGIRawFrame) {
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = m_RendererCore->GetSSGIRawBuffer();
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        prePassBarriers.push_back(barrier);
+    }
+
     if (!m_IsFirstSSGIFrame) {
+        D3D12_RESOURCE_BARRIER barrier = {};
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
         barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        commandList->ResourceBarrier(1, &barrier);
+        prePassBarriers.push_back(barrier);
     }
 
-    // Set pipeline state
+    if (!prePassBarriers.empty()) {
+        commandList->ResourceBarrier(static_cast<UINT>(prePassBarriers.size()), prePassBarriers.data());
+    }
+
+    // Set pipeline state for SSGI generation
     commandList->SetPipelineState(m_SSGIPipelineState.Get());
     commandList->SetComputeRootSignature(m_SSGIRootSignature.Get());
 
-    // Set pass constant buffer
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetComputeRootConstantBufferView(0, passCBAddress);
 
-    // Set descriptor heap (G-Buffer SRV Heap에 모든 descriptor가 포함되어 있음)
     ID3D12DescriptorHeap* heaps[] = { m_RendererCore->GetGBufferSRVHeap() };
     commandList->SetDescriptorHeaps(1, heaps);
 
-    // Set G-Buffer SRVs
     D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
     commandList->SetComputeRootDescriptorTable(1, srvHandle);
 
-    // Set SSGI UAV (G-Buffer SRV Heap에서 가져옴)
-    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
-    commandList->SetComputeRootDescriptorTable(2, uavHandle);
+    // Raw SSGI output UAV
+    D3D12_GPU_DESCRIPTOR_HANDLE rawUavHandle = m_RendererCore->GetSSGIRawUAVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(2, rawUavHandle);
 
-    // Dispatch compute shader (8x8 thread groups)
     uint32_t width = m_RendererCore->GetWidth();
     uint32_t height = m_RendererCore->GetHeight();
     uint32_t dispatchX = (width + 7) / 8;
     uint32_t dispatchY = (height + 7) / 8;
     commandList->Dispatch(dispatchX, dispatchY, 1);
 
-    // Transition SSGI buffer to pixel shader resource state
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    commandList->ResourceBarrier(1, &barrier);
-    
-    // 첫 프레임 플래그 해제
+    // Transition raw SSGI for denoise pass
+    D3D12_RESOURCE_BARRIER rawToSrv = {};
+    rawToSrv.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    rawToSrv.Transition.pResource = m_RendererCore->GetSSGIRawBuffer();
+    rawToSrv.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    rawToSrv.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    rawToSrv.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &rawToSrv);
+
+    // Denoise pass
+    commandList->SetPipelineState(m_SSGIDenoisePipelineState.Get());
+    commandList->SetComputeRootSignature(m_SSGIDenoiseRootSignature.Get());
+
+    commandList->SetComputeRootConstantBufferView(0, passCBAddress);
+    commandList->SetDescriptorHeaps(1, heaps);
+
+    commandList->SetComputeRootDescriptorTable(1, srvHandle);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE rawSrvHandle = m_RendererCore->GetSSGIRawSRVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(2, rawSrvHandle);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE denoisedUavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(3, denoisedUavHandle);
+
+    commandList->Dispatch(dispatchX, dispatchY, 1);
+
+    // Transition SSGI buffer to pixel shader resource state for lighting
+    D3D12_RESOURCE_BARRIER postBarriers[1] = {};
+    postBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    postBarriers[0].Transition.pResource = m_RendererCore->GetSSGIBuffer();
+    postBarriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    postBarriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    postBarriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, postBarriers);
+
     m_IsFirstSSGIFrame = false;
+    m_IsFirstSSGIRawFrame = false;
 }
 
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {

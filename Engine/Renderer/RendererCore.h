@@ -42,12 +42,15 @@ public:
 
     // SSGI access
     ID3D12Resource* GetSSGIBuffer() const { return m_SSGIBuffer.Get(); }
+    ID3D12Resource* GetSSGIRawBuffer() const { return m_SSGIRawBuffer.Get(); }
     ID3D12DescriptorHeap* GetSSGIRTVHeap() const { return m_SSGIRTVHeap.Get(); }
     ID3D12DescriptorHeap* GetSSGISRVHeap() const { return m_SSGISRVHeap.Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGIRTVHandle() const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGISRVHandle() const;
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandle() const;
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandleFromGBufferHeap() const;
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIRawSRVHandleFromGBufferHeap() const;
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIRawUAVHandleFromGBufferHeap() const;
 
 private:
     void CreateDevice();
@@ -94,6 +97,7 @@ private:
 
     // SSGI
     ComPtr<ID3D12Resource> m_SSGIBuffer;
+    ComPtr<ID3D12Resource> m_SSGIRawBuffer;
     ComPtr<ID3D12DescriptorHeap> m_SSGIRTVHeap;
     ComPtr<ID3D12DescriptorHeap> m_SSGISRVHeap;
     uint32_t m_SSGIRTVDescriptorSize;

@@ -53,6 +53,7 @@ private:
     void CreateGBufferPipelineState();
     void CreateLightingPipelineState();
     void CreateSSGIPipelineState();
+    void CreateSSGIDenoisePipelineState();
     void CreateConstantBuffer();
 
 private:
@@ -74,6 +75,8 @@ private:
     ComPtr<ID3D12PipelineState> m_LightingPipelineState;
     ComPtr<ID3D12RootSignature> m_SSGIRootSignature;
     ComPtr<ID3D12PipelineState> m_SSGIPipelineState;
+    ComPtr<ID3D12RootSignature> m_SSGIDenoiseRootSignature;
+    ComPtr<ID3D12PipelineState> m_SSGIDenoisePipelineState;
 
     // Shadow map 리소스 + DSV
     ComPtr<ID3D12Resource> m_ShadowMap;
@@ -93,9 +96,10 @@ private:
     
     // Render mode
     RenderMode m_RenderMode = RenderMode::Composite;
-    
+
     // First frame flag for SSGI barrier
     bool m_IsFirstSSGIFrame = true;
+    bool m_IsFirstSSGIRawFrame = true;
 
     // Constant buffers
     static const int FrameCount = 2;
