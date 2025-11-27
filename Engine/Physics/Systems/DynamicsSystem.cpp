@@ -35,9 +35,6 @@ void DynamicsSystem::Update(float deltaTime) {
         auto* rb = entity->GetComponent<RigidbodyComponent>();
         if (!rb) continue;
 
-        // 1. 힘 누적기 초기화
-        rb->ClearForces();
-
         // 2. 중력 적용 (단순히 아래로 향하는 힘을 더함)
         ApplyGravity(entity, deltaTime);
 
@@ -51,6 +48,9 @@ void DynamicsSystem::Update(float deltaTime) {
         //5. 회전 계산
         IntegrateAngularVelocity(entity, deltaTime);
         IntegrateRotation(entity, deltaTime);
+
+        // 1. 힘 누적기 초기화 (다음 프레임을 위해 마지막에 초기화)
+        rb->ClearForces();
     }
 }
 

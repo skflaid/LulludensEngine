@@ -42,4 +42,25 @@ struct RigidbodyComponent : public IComponent {
         forceAccumulator = { 0.0f, 0.0f, 0.0f };
         torqueAccumulator = { 0.0f, 0.0f, 0.0f };
     }
+
+    // Compute proper moment of inertia for a box shape
+    // For a uniform box with dimensions (w, h, d), the moments are:
+    // Ix = (m/12)(h² + d²), Iy = (m/12)(w² + d²), Iz = (m/12)(w² + h²)
+    // Since we use scalar inertia, we average the three principal moments
+    void ComputeBoxInertia(const XMFLOAT3& size, const XMFLOAT3& scale) {
+        float w = size.x * scale.x;
+        float h = size.y * scale.y;
+        float d = size.z * scale.z;
+        
+        // Principal moments of inertia
+        float Ix = (mass / 12.0f) * (h*h + d*d);
+        float Iy = (mass / 12.0f) * (w*w + d*d);
+        float Iz = (mass / 12.0f) * (w*w + h*h);
+        
+        // Use average for scalar approximation
+        inertia = (Ix + Iy + Iz) / 3.0f;
+        
+        // Safety: ensure non-zero
+        if (inertia < 0.001f) inertia = 0.001f;
+    }
 };
