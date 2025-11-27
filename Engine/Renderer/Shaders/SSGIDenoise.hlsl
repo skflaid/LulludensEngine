@@ -52,6 +52,11 @@ static const float BILATERAL_SIGMA_DEPTH = 0.2f;    // 깊이 차이 시그마
 static const float BILATERAL_SIGMA_NORMAL = 0.3f;   // 노말 차이 시그마
 static const int BILATERAL_KERNEL_SIZE = 7;         // 필터 커널 크기 (5x5)
 
+// Temporal Filter 파라미터 (고스팅 방지)
+static const float TEMPORAL_BLEND_FACTOR = 0.8f;        // Temporal Filter 블렌드 비율
+static const float TEMPORAL_REJECTION_THRESHOLD = 0.5f;  // 히스토리 거부 임계값 (차이가 이 값보다 크면 거부)
+static const float TEMPORAL_CLAMP_SCALE = 0.1f;         // 클램핑 범위 (현재 값의 ±이 비율만큼)
+
 // Bilateral Filter: 엣지 보존 스무딩
 float3 ApplyBilateralFilter(float3 centerGI, float3 centerPos, float3 centerNormal, int2 centerCoord)
 {
@@ -147,9 +152,22 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     // Bilateral Filter 적용 (엣지 보존 스무딩)
     float3 filteredSSGI = ApplyBilateralFilter(centerGI, posW, normalW, texCoord);
     
-    // Temporal Filter: 이전 프레임 결과와 현재 결과를 lerp (0.2 : 0.8)
+    // Temporal Filter: 이전 프레임 결과와 현재 결과를 lerp (고스팅 방지 포함)
     float3 previousSSGI = gSSGIPrevious.Load(int3(texCoord, 0)).rgb;
-    float3 temporalFilteredSSGI = lerp(previousSSGI, filteredSSGI, 0.2f);
+    
+    // 1. 히스토리 거부 (History Rejection): 이전 프레임과 현재 프레임의 차이가 크면 거부
+    float3 diff = abs(previousSSGI - filteredSSGI);
+    float maxDiff = max(max(diff.r, diff.g), diff.b);
+    float rejectionFactor = 1.0f - saturate(maxDiff / TEMPORAL_REJECTION_THRESHOLD);
+    
+    // 2. 클램핑 (Clamping): 이전 프레임 값을 현재 값 주변으로 제한
+    float3 clampMin = filteredSSGI * (1.0f - TEMPORAL_CLAMP_SCALE);
+    float3 clampMax = filteredSSGI * (1.0f + TEMPORAL_CLAMP_SCALE);
+    float3 clampedPrevious = clamp(previousSSGI, clampMin, clampMax);
+    
+    // 3. 거부 인자가 낮으면 (차이가 크면) Temporal Filter 비활성화
+    float blendFactor = lerp(1.0f, TEMPORAL_BLEND_FACTOR, rejectionFactor);
+    float3 temporalFilteredSSGI = lerp(clampedPrevious, filteredSSGI, blendFactor);
     
     // 결과 출력 (Temporal Filter 적용된 결과를 UAV에 쓰기)
     gSSGIOutput[dispatchThreadID.xy] = float4(temporalFilteredSSGI, 1.0f);

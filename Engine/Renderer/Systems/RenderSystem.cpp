@@ -1090,9 +1090,6 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
 
-    // SSGI 버퍼를 SRV로 읽기 위한 상태 전환
-    // SSGI 패스에서 UNORDERED_ACCESS 상태로 출력했으므로,
-    // NON_PIXEL_SHADER_RESOURCE로 전환하여 compute shader에서 SRV로 읽을 수 있게 함
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
