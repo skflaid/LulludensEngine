@@ -5,6 +5,8 @@
 #include <wrl.h>
 #include <d3d12.h>
 #include <iostream>
+#include <unordered_map>
+#include <memory>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
@@ -14,6 +16,10 @@ struct ModelVertex {
     XMFLOAT3 Pos;
     XMFLOAT3 Normal;
     XMFLOAT2 TexC; // 텍스처 좌표 추가
+
+    // 스켈레탈 애니메이션용 : 최대 4개 본 인덱스 + 가중치
+    uint32_t BoneIndices[4] = { 0, 0, 0, 0 };
+    float    BoneWeights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // 재질 정보 (PBR 기반을 가정하지만, 일단은 텍스처만)
@@ -43,9 +49,61 @@ public:
     int MatIndex = -1; // 이 메시가 사용할 재질의 인덱스
 };
 
+// ===== 스켈레탈 애니메이션 데이터 =====
+
+struct ModelBone {
+    std::string Name;
+    int ParentIndex = -1;             // -1이면 루트
+    DirectX::XMFLOAT4X4 Offset;       // inverse bind pose (aiBone::mOffsetMatrix)
+};
+
+struct ModelKeyframeVec3 {
+    double Time = 0.0;
+    DirectX::XMFLOAT3 Value = { 0.0f, 0.0f, 0.0f };
+};
+
+struct ModelKeyframeQuat {
+    double Time = 0.0;
+    DirectX::XMFLOAT4 Value = { 0.0f, 0.0f, 0.0f, 1.0f };
+};
+
+struct ModelBoneAnimation {
+    std::vector<ModelKeyframeVec3> Translations;
+    std::vector<ModelKeyframeQuat> Rotations;
+    std::vector<ModelKeyframeVec3> Scales;
+};
+
+struct ModelAnimationClip {
+    std::string Name;
+    double Duration = 0.0;   // 애니메이션 길이 (ticks)
+    double TicksPerSecond = 0.0;  // 초당 tick 수
+    // bone index -> animation track
+    std::vector<ModelBoneAnimation> BoneAnimations;
+};
+
 // FBX 파일 하나에 대응되는 전체 모델 정보
 class Model {
 public:
     std::vector<std::unique_ptr<Mesh>> Meshes;
     std::vector<std::unique_ptr<Material>> Materials;
+
+    // --- 스켈레톤 + 애니메이션 ---
+    std::vector<ModelBone> Bones;                          // 본 리스트
+    std::unordered_map<std::string, int> BoneNameToIndex;  // 본 이름 -> 인덱스
+    std::vector<ModelAnimationClip> Animations;            // 애니메이션 클립들
+
+    int GetBoneIndex(const std::string& name) const {
+        auto it = BoneNameToIndex.find(name);
+        if (it == BoneNameToIndex.end()) return -1;
+        return it->second;
+    }
+
+    const ModelAnimationClip* GetAnimation(const std::string& name) const {
+        if (Animations.empty()) return nullptr;
+        if (name.empty()) return &Animations[0];
+        for (const auto& anim : Animations) {
+            if (anim.Name == name) return &anim;
+        }
+        return &Animations[0];
+    }
 };

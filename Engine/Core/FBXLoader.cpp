@@ -12,8 +12,40 @@
 #include <d3d12.h>
 #include <wrl.h>
 
+#include <functional>
+
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
+
+namespace
+{
+    DirectX::XMFLOAT4X4 ToXMFLOAT4X4(const aiMatrix4x4& m)
+    {
+        return DirectX::XMFLOAT4X4(
+            (float)m.a1, (float)m.b1, (float)m.c1, (float)m.d1,
+            (float)m.a2, (float)m.b2, (float)m.c2, (float)m.d2,
+            (float)m.a3, (float)m.b3, (float)m.c3, (float)m.d3,
+            (float)m.a4, (float)m.b4, (float)m.c4, (float)m.d4
+        );
+    }
+
+    int GetOrCreateBoneIndex(Model* model, const std::string& name, const aiBone* bone)
+    {
+        auto it = model->BoneNameToIndex.find(name);
+        if (it != model->BoneNameToIndex.end())
+            return it->second;
+
+        ModelBone newBone;
+        newBone.Name = name;
+        newBone.ParentIndex = -1;
+        newBone.Offset = ToXMFLOAT4X4(bone->mOffsetMatrix);
+
+        int index = static_cast<int>(model->Bones.size());
+        model->Bones.push_back(newBone);
+        model->BoneNameToIndex[name] = index;
+        return index;
+    }
+}
 
 Model* FBXLoader::Load(const std::string& filePath) {
     Assimp::Importer importer;
@@ -43,6 +75,10 @@ Model* FBXLoader::Load(const std::string& filePath) {
 
     ProcessMaterials(scene, model.get());
     ProcessNode(scene->mRootNode, scene, model.get());
+
+    // 메시들을 전부 훑은 뒤에 본 계층 + 애니메이션 처리
+    BuildSkeletonHierarchy(scene, model.get());
+    ProcessAnimations(scene, model.get());
 
     return model.release();
 }
@@ -84,6 +120,9 @@ Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel
         }
         vertices.push_back(v);
     }
+
+    // --- 추가: 스켈레탈 본 웨이트 추출 ---
+    ExtractBoneWeights(mesh, outModel, vertices);
 
     // 2. 인덱스 데이터(Index Data)를 순회하며 추출
     for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
@@ -145,5 +184,174 @@ void FBXLoader::ProcessMaterials(const aiScene* scene, Model* outModel) {
         }
 
         outModel->Materials[i] = std::move(material);
+    }
+}
+
+void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<ModelVertex>& vertices)
+{
+    if (!mesh->HasBones())
+        return;
+
+    // 초기화 (혹시 모를 쓰레기값 방지)
+    for (auto& v : vertices) {
+        for (int i = 0; i < 4; ++i) {
+            v.BoneIndices[i] = 0;
+            v.BoneWeights[i] = 0.0f;
+        }
+    }
+
+    // aiMesh::mBones 를 돌면서 각 정점에 본 인덱스/웨이트 할당
+    for (unsigned int i = 0; i < mesh->mNumBones; ++i) {
+        aiBone* aiBonePtr = mesh->mBones[i];
+        std::string boneName = aiBonePtr->mName.C_Str();
+
+        int boneIndex = GetOrCreateBoneIndex(outModel, boneName, aiBonePtr);
+
+        for (unsigned int j = 0; j < aiBonePtr->mNumWeights; ++j) {
+            const aiVertexWeight& vw = aiBonePtr->mWeights[j];
+            unsigned int vertexId = vw.mVertexId;
+            float weight = vw.mWeight;
+
+            if (vertexId >= vertices.size())
+                continue;
+
+            auto& v = vertices[vertexId];
+
+            // 4개 슬롯 중 빈 자리 또는 가장 작은 웨이트를 교체
+            int slot = -1;
+            float minWeight = weight;
+            int minIndex = 0;
+
+            for (int k = 0; k < 4; ++k) {
+                if (v.BoneWeights[k] == 0.0f) {
+                    slot = k;
+                    break;
+                }
+                if (v.BoneWeights[k] < minWeight) {
+                    minWeight = v.BoneWeights[k];
+                    minIndex = k;
+                }
+            }
+
+            if (slot == -1) {
+                // 이미 4개 꽉 찼으면 가장 작은 웨이트를 교체
+                slot = minIndex;
+            }
+
+            v.BoneWeights[slot] = weight;
+            v.BoneIndices[slot] = static_cast<uint32_t>(boneIndex);
+        }
+    }
+
+    // 정규화 (총합이 1이 되도록)
+    for (auto& v : vertices) {
+        float sum =
+            v.BoneWeights[0] + v.BoneWeights[1] +
+            v.BoneWeights[2] + v.BoneWeights[3];
+
+        if (sum > 0.0f) {
+            float inv = 1.0f / sum;
+            for (int i = 0; i < 4; ++i) {
+                v.BoneWeights[i] *= inv;
+            }
+        }
+    }
+}
+
+void FBXLoader::BuildSkeletonHierarchy(const aiScene* scene, Model* outModel)
+{
+    if (!scene || !scene->mRootNode || outModel->Bones.empty())
+        return;
+
+    std::function<void(aiNode*, int)> recurse =
+        [&](aiNode* node, int parentBoneIndex)
+        {
+            std::string nodeName = node->mName.C_Str();
+            int currentBoneIndex = parentBoneIndex;
+
+            auto it = outModel->BoneNameToIndex.find(nodeName);
+            if (it != outModel->BoneNameToIndex.end()) {
+                currentBoneIndex = it->second;
+                outModel->Bones[currentBoneIndex].ParentIndex = parentBoneIndex;
+            }
+
+            for (unsigned int i = 0; i < node->mNumChildren; ++i) {
+                recurse(node->mChildren[i], currentBoneIndex);
+            }
+        };
+
+    recurse(scene->mRootNode, -1);
+}
+
+void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
+{
+    if (!scene || !scene->HasAnimations() || outModel->Bones.empty())
+        return;
+
+    for (unsigned int a = 0; a < scene->mNumAnimations; ++a) {
+        aiAnimation* anim = scene->mAnimations[a];
+        ModelAnimationClip clip;
+
+        clip.Name = anim->mName.C_Str();
+        if (clip.Name.empty()) {
+            clip.Name = "Anim" + std::to_string(a);
+        }
+
+        clip.Duration = anim->mDuration;
+        clip.TicksPerSecond = (anim->mTicksPerSecond != 0.0)
+            ? anim->mTicksPerSecond
+            : 25.0; // 기본값
+
+        clip.BoneAnimations.clear();
+        clip.BoneAnimations.resize(outModel->Bones.size());
+
+        for (unsigned int c = 0; c < anim->mNumChannels; ++c) {
+            aiNodeAnim* channel = anim->mChannels[c];
+            std::string channelName = channel->mNodeName.C_Str();
+
+            int boneIndex = outModel->GetBoneIndex(channelName);
+            if (boneIndex < 0) continue;
+
+            ModelBoneAnimation& boneAnim = clip.BoneAnimations[boneIndex];
+
+            // Position keys
+            for (unsigned int i = 0; i < channel->mNumPositionKeys; ++i) {
+                const aiVectorKey& key = channel->mPositionKeys[i];
+                ModelKeyframeVec3 kf;
+                kf.Time = key.mTime;
+                kf.Value = DirectX::XMFLOAT3(
+                    (float)key.mValue.x,
+                    (float)key.mValue.y,
+                    (float)key.mValue.z);
+                boneAnim.Translations.push_back(kf);
+            }
+
+            // Rotation keys
+            for (unsigned int i = 0; i < channel->mNumRotationKeys; ++i) {
+                const aiQuatKey& key = channel->mRotationKeys[i];
+                ModelKeyframeQuat kf;
+                kf.Time = key.mTime;
+                kf.Value = DirectX::XMFLOAT4(
+                    (float)key.mValue.x,
+                    (float)key.mValue.y,
+                    (float)key.mValue.z,
+                    (float)key.mValue.w);
+                boneAnim.Rotations.push_back(kf);
+            }
+
+            // Scale keys
+            for (unsigned int i = 0; i < channel->mNumScalingKeys; ++i) {
+                const aiVectorKey& key = channel->mScalingKeys[i];
+                ModelKeyframeVec3 kf;
+                kf.Time = key.mTime;
+                kf.Value = DirectX::XMFLOAT3(
+                    (float)key.mValue.x,
+                    (float)key.mValue.y,
+                    (float)key.mValue.z);
+                boneAnim.Scales.push_back(kf);
+            }
+        }
+
+        outModel->Animations.push_back(std::move(clip));
     }
 }
