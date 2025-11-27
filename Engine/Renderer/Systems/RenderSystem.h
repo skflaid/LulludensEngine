@@ -45,6 +45,7 @@ private:
     void RenderLightingPass(UINT frameIndex);
     void RenderSSGIPass(UINT frameIndex);
     void RenderSSGIDenoisePass(UINT frameIndex);
+    void CopySSGIToPrevious(UINT frameIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
 

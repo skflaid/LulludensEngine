@@ -477,6 +477,13 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
     srvTable2[0].RegisterSpace = 0;
     srvTable2[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
+    D3D12_DESCRIPTOR_RANGE srvTable3[1] = {};
+    srvTable3[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable3[0].NumDescriptors = 1;
+    srvTable3[0].BaseShaderRegister = 3;  // SSGI Previous (t3)
+    srvTable3[0].RegisterSpace = 0;
+    srvTable3[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
     D3D12_DESCRIPTOR_RANGE uavTable[1] = {};
     uavTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
     uavTable[0].NumDescriptors = 1;
@@ -484,7 +491,7 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
     uavTable[0].RegisterSpace = 0;
     uavTable[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParameters[5] = {};
+    D3D12_ROOT_PARAMETER rootParameters[6] = {};
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
     rootParameters[0].Descriptor.RegisterSpace = 0;
@@ -507,8 +514,13 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
 
     rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[4].DescriptorTable.NumDescriptorRanges = 1;
-    rootParameters[4].DescriptorTable.pDescriptorRanges = uavTable;  // SSGI Output UAV
+    rootParameters[4].DescriptorTable.pDescriptorRanges = srvTable3;  // SSGI Previous SRV
     rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[5].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[5].DescriptorTable.pDescriptorRanges = uavTable;  // SSGI Output UAV
+    rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
@@ -526,7 +538,7 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
     samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
-    rootDesc.NumParameters = 5;  // CBV(0) + Position SRV(1) + Normal SRV(2) + SSGI Input SRV(3) + SSGI Output UAV(4)
+    rootDesc.NumParameters = 6;  // CBV(0) + Position SRV(1) + Normal SRV(2) + SSGI Input SRV(3) + SSGI Previous SRV(4) + SSGI Output UAV(5)
     rootDesc.pParameters = rootParameters;
     rootDesc.NumStaticSamplers = 1;
     rootDesc.pStaticSamplers = &samplerDesc;
@@ -828,6 +840,9 @@ void RenderSystem::Render() {
     // SSGI Denoise Pass (SSGI 결과를 필터링)
     RenderSSGIDenoisePass(frameIndex);
 
+    // 현재 SSGI 결과를 이전 프레임 텍스처로 복사 (Temporal Filter용)
+    CopySSGIToPrevious(frameIndex);
+
     // Lighting Pass (모드에 따라 다른 결과 표시)
     RenderLightingPass(frameIndex);
 
@@ -1113,9 +1128,13 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     D3D12_GPU_DESCRIPTOR_HANDLE ssgiSrvHandle = m_RendererCore->GetSSGISRVHandleFromGBufferHeap();
     commandList->SetComputeRootDescriptorTable(3, ssgiSrvHandle);
     
+    // Set SSGI Previous SRV (G-Buffer SRV Heap의 7번째 슬롯)
+    D3D12_GPU_DESCRIPTOR_HANDLE ssgiPreviousSrvHandle = m_RendererCore->GetSSGIPreviousSRVHandleFromGBufferHeap();
+    commandList->SetComputeRootDescriptorTable(4, ssgiPreviousSrvHandle);
+    
     // Set SSGI Output UAV (G-Buffer SRV Heap의 6번째 슬롯)
     D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
-    commandList->SetComputeRootDescriptorTable(4, uavHandle);
+    commandList->SetComputeRootDescriptorTable(5, uavHandle);
 
     // SSGI 버퍼를 UAV로 쓰기 위해 상태 전환
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
@@ -1133,6 +1152,42 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     commandList->ResourceBarrier(1, &barrier);
+}
+
+void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
+    auto commandList = m_RendererCore->GetCommandList();
+    
+    // 현재 SSGI 버퍼를 COPY_SOURCE 상태로 전환
+    D3D12_RESOURCE_BARRIER barriers[2] = {};
+    barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[0].Transition.pResource = m_RendererCore->GetSSGIBuffer();
+    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    barriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    
+    // 이전 프레임 SSGI 버퍼를 COPY_DEST 상태로 전환
+    barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[1].Transition.pResource = m_RendererCore->GetSSGIPreviousBuffer();
+    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+    barriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    
+    commandList->ResourceBarrier(2, barriers);
+    
+    // 텍스처 복사
+    commandList->CopyResource(
+        m_RendererCore->GetSSGIPreviousBuffer(),
+        m_RendererCore->GetSSGIBuffer()
+    );
+    
+    // 상태를 원래대로 복원
+    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    
+    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    
+    commandList->ResourceBarrier(2, barriers);
 }
 
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {

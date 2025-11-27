@@ -169,7 +169,7 @@ float4 PS(VertexOut pin) : SV_Target
     }
     else {
         // SSGI only
-        litColor = float4(ssgiContribution, 1.0f);
+        litColor = float4(2.0f * ssgiContribution, 1.0f);
     }
     
     litColor.a = albedo.a;

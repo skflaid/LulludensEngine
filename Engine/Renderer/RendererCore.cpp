@@ -194,8 +194,9 @@ void RendererCore::CreateGBuffer() {
  // 4: SSGI     SRV
  // 5: Shadow   SRV
  // 6: SSGI     UAV
+ // 7: SSGI Previous SRV (이전 프레임)
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = 7; // 6 → 7 로 변경
+    srvHeapDesc.NumDescriptors = 8; // 7 → 8 로 변경 (이전 프레임 SSGI 추가)
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_Device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_GBufferSRVHeap));
@@ -349,6 +350,21 @@ void RendererCore::CreateSSGIBuffer() {
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferUavHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
     gbufferUavHandle.ptr += 6 * m_GBufferSRVDescriptorSize; // 5 → 6
     m_Device->CreateUnorderedAccessView(m_SSGIBuffer.Get(), nullptr, nullptr, gbufferUavHandle);
+
+    // 이전 프레임 SSGI Output 버퍼 생성 (Temporal Filter용)
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &ssgiDesc,
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,  // SRV로 읽기만 함
+        &clearValue,
+        IID_PPV_ARGS(&m_SSGIPreviousBuffer)
+    );
+
+    // 이전 프레임 SSGI SRV를 G-Buffer SRV Heap의 7번째 슬롯에 생성 (index 7)
+    D3D12_CPU_DESCRIPTOR_HANDLE gbufferPreviousSrvHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
+    gbufferPreviousSrvHandle.ptr += 7 * m_GBufferSRVDescriptorSize;
+    m_Device->CreateShaderResourceView(m_SSGIPreviousBuffer.Get(), nullptr, gbufferPreviousSrvHandle);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIRTVHandle() const {
@@ -376,6 +392,13 @@ D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIUAVHandleFromGBufferHeap() cons
     D3D12_GPU_DESCRIPTOR_HANDLE handle = m_GBufferSRVHeap->GetGPUDescriptorHandleForHeapStart();
     // 0-3: G-Buffer SRV, 4: SSGI SRV, 5: ShadowMap SRV, 6: SSGI UAV
     handle.ptr += 6 * m_GBufferSRVDescriptorSize; // SSGI UAV는 index 6
+    return handle;
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE RendererCore::GetSSGIPreviousSRVHandleFromGBufferHeap() const {
+    D3D12_GPU_DESCRIPTOR_HANDLE handle = m_GBufferSRVHeap->GetGPUDescriptorHandleForHeapStart();
+    // 0-3: G-Buffer SRV, 4: SSGI SRV, 5: ShadowMap SRV, 6: SSGI UAV, 7: SSGI Previous SRV
+    handle.ptr += 7 * m_GBufferSRVDescriptorSize; // 이전 프레임 SSGI SRV는 index 7
     return handle;
 }
 

@@ -38,6 +38,9 @@ Texture2D gNormalMap   : register(t1);
 // SSGI 입력 (필터링 전) - SRV로 읽기
 Texture2D gSSGIInput : register(t2);
 
+// 이전 프레임 SSGI 출력 (Temporal Filter용) - SRV로 읽기
+Texture2D gSSGIPrevious : register(t3);
+
 // SSGI 출력 (필터링 후) - UAV로 쓰기
 RWTexture2D<float4> gSSGIOutput : register(u0);
 
@@ -144,6 +147,10 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     // Bilateral Filter 적용 (엣지 보존 스무딩)
     float3 filteredSSGI = ApplyBilateralFilter(centerGI, posW, normalW, texCoord);
     
-    // 결과 출력 (필터링된 결과를 UAV에 쓰기)
-    gSSGIOutput[dispatchThreadID.xy] = float4(filteredSSGI, 1.0f);
+    // Temporal Filter: 이전 프레임 결과와 현재 결과를 lerp (0.2 : 0.8)
+    float3 previousSSGI = gSSGIPrevious.Load(int3(texCoord, 0)).rgb;
+    float3 temporalFilteredSSGI = lerp(previousSSGI, filteredSSGI, 0.2f);
+    
+    // 결과 출력 (Temporal Filter 적용된 결과를 UAV에 쓰기)
+    gSSGIOutput[dispatchThreadID.xy] = float4(temporalFilteredSSGI, 1.0f);
 }

@@ -43,6 +43,7 @@ public:
 
     // SSGI access
     ID3D12Resource* GetSSGIBuffer() const { return m_SSGIBuffer.Get(); }
+    ID3D12Resource* GetSSGIPreviousBuffer() const { return m_SSGIPreviousBuffer.Get(); }
     ID3D12DescriptorHeap* GetSSGIRTVHeap() const { return m_SSGIRTVHeap.Get(); }
     ID3D12DescriptorHeap* GetSSGISRVHeap() const { return m_SSGISRVHeap.Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetSSGIRTVHandle() const;
@@ -50,6 +51,7 @@ public:
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandle() const;
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGISRVHandleFromGBufferHeap() const;
     D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandleFromGBufferHeap() const;
+    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIPreviousSRVHandleFromGBufferHeap() const;
 
 private:
     void CreateDevice();
@@ -96,6 +98,7 @@ private:
 
     // SSGI
     ComPtr<ID3D12Resource> m_SSGIBuffer;
+    ComPtr<ID3D12Resource> m_SSGIPreviousBuffer;  // 이전 프레임 SSGI Output
     ComPtr<ID3D12DescriptorHeap> m_SSGIRTVHeap;
     ComPtr<ID3D12DescriptorHeap> m_SSGISRVHeap;
     uint32_t m_SSGIRTVDescriptorSize;

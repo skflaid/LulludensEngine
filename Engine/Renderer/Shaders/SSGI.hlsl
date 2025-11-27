@@ -44,9 +44,9 @@ SamplerState gsamPointWrap : register(s0);
 
 // SSGI 파라미터
 static const float SSGI_RAY_STEP = 0.1f;
-static const float SSGI_MAX_DISTANCE = 2.0f;
-static const int SSGI_NUM_SAMPLES = 16;
-static const float SSGI_INTENSITY = 0.7f;
+static const float SSGI_MAX_DISTANCE = 4.0f;
+static const int SSGI_NUM_SAMPLES = 32;
+static const float SSGI_INTENSITY = 0.2f;
 
 // 화면 공간에서 랜덤 방향 벡터 생성
 float3 GetRandomDirection(float2 uv, float3 normal)
@@ -72,7 +72,8 @@ float3 GetRandomDirection(float2 uv, float3 normal)
 float3 TraceSSGI(float3 pos, float3 normal, float2 uv, float3 albedo)
 {
     float3 gi = float3(0.0f, 0.0f, 0.0f);
-    
+    int    hitCount = 0;  // ← 실제로 기여한 샘플 수
+
     // 여러 샘플을 사용하여 간접 조명 계산
     for (int i = 0; i < SSGI_NUM_SAMPLES; ++i)
     {
@@ -82,79 +83,87 @@ float3 TraceSSGI(float3 pos, float3 normal, float2 uv, float3 albedo)
             frac(sin(dot(uv + float(i), float2(23.1407f, 2.6651f))) * 43758.5453f)
         );
         offset = offset * 2.0f - 1.0f;
-        
+
         // 반사 방향 계산
         float3 viewDir = normalize(gEyePosW - pos);
         float3 reflectDir = reflect(-viewDir, normal);
-        
+
         // 랜덤 방향과 반사 방향을 혼합
-        float3 sampleDir = normalize(lerp(reflectDir, GetRandomDirection(uv + offset, normal), 0.5f));
-        
+        float3 sampleDir = normalize(lerp(reflectDir, GetRandomDirection(uv + offset, normal), 0.8f));
+
         // 레이 마칭
         float3 rayPos = pos;
         float3 rayStep = sampleDir * SSGI_RAY_STEP;
-        
+
         float accumulatedDistance = 0.0f;
         float3 hitColor = float3(0.0f, 0.0f, 0.0f);
-        bool hit = false;
-        
+        bool  hit = false;
+
         for (int step = 0; step < 20; ++step)
         {
             rayPos += rayStep;
             accumulatedDistance += SSGI_RAY_STEP;
-            
+
             if (accumulatedDistance > SSGI_MAX_DISTANCE)
                 break;
-            
+
             // 월드 공간을 화면 공간으로 변환
             float4 projPos = mul(float4(rayPos, 1.0f), gViewProj);
             projPos.xyz /= projPos.w;
-            
+
             // NDC를 UV 좌표로 변환
             float2 sampleUV = projPos.xy * 0.5f + 0.5f;
             sampleUV.y = 1.0f - sampleUV.y;
-            
+
             // 화면 밖이면 스킵
             if (sampleUV.x < 0.0f || sampleUV.x > 1.0f || sampleUV.y < 0.0f || sampleUV.y > 1.0f)
                 break;
-            
-            // G-Buffer에서 샘플링 (Compute Shader에서는 Load 사용)
+
+            // G-Buffer에서 샘플링
             int2 sampleCoord = int2(sampleUV * gRenderTargetSize);
             sampleCoord = clamp(sampleCoord, int2(0, 0), int2(gRenderTargetSize) - 1);
             float4 samplePos = gPositionMap.Load(int3(sampleCoord, 0));
             float4 sampleNormalEncoded = gNormalMap.Load(int3(sampleCoord, 0));
             float4 sampleAlbedo = gAlbedoMap.Load(int3(sampleCoord, 0));
-            
+
             // 노말 디코딩
             float3 sampleNormal = normalize(sampleNormalEncoded.rgb * 2.0f - 1.0f);
-            
+
             // 거리 체크
             float distanceToSample = length(samplePos.xyz - rayPos);
-            
-            if (distanceToSample < SSGI_RAY_STEP * 0.5f)
+
+            if (distanceToSample < SSGI_RAY_STEP * 1.5f)
             {
                 // 히트! 샘플의 알베도를 사용하여 간접 조명 계산
                 float3 toHit = normalize(samplePos.xyz - pos);
                 float ndotl = max(dot(normal, toHit), 0.0f);
-                
+
                 // 거리에 따른 감쇠
                 float attenuation = 1.0f / (1.0f + accumulatedDistance * accumulatedDistance);
-                
+
                 hitColor = sampleAlbedo.rgb * ndotl * attenuation;
                 hit = true;
                 break;
             }
         }
-        
+
         if (hit)
         {
             gi += hitColor;
+            hitCount++;      // ← 실제로 기여한 샘플 수 증가
         }
     }
-    
-    // 평균 계산
-    gi /= float(SSGI_NUM_SAMPLES);
-    
+
+    // 실제로 기여한 샘플이 있는 경우만 평균
+    if (hitCount > 0)
+    {
+        gi /= float(hitCount);
+    }
+    else
+    {
+        gi = float3(0.0f, 0.0f, 0.0f);  // 레이 전부 미스 → 기여 없음
+    }
+
     return gi * SSGI_INTENSITY;
 }
 
