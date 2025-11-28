@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "GameEngine.h"
 #include "EntityInspector.h"
+#include "Core/InputManager.h"
 
 // ���� �������� ���� (�ٸ� ��⿡�� ������ �� �����Ƿ� �̸� �״��)
 GameEngine g_Engine;
@@ -22,6 +23,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam == 'I' || wParam == 'i') {
             // I키를 눌렀을 때 렌더링 모드 토글
             g_Engine.ToggleRenderMode();
+        }
+        else if (wParam == VK_ESCAPE) {
+            // ESC키로 마우스 해제
+            InputManager::Get()->ReleaseMouse();
+        }
+        return 0;
+    case WM_LBUTTONDOWN:
+        // 왼쪽 마우스 클릭 시 마우스 캡처
+        InputManager::Get()->CaptureMouse();
+        return 0;
+    case WM_RBUTTONDOWN:
+        // 오른쪽 마우스 클릭 시 마우스 해제
+        InputManager::Get()->ReleaseMouse();
+        return 0;
+    case WM_ACTIVATE:
+        // 창 포커스 잃으면 마우스 해제
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            InputManager::Get()->ReleaseMouse();
         }
         return 0;
     }
@@ -61,6 +80,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     ShowWindow(g_Hwnd, nCmdShow);
     g_Inspector.Create(g_Hwnd, hInstance);
     g_Inspector.Show(SW_SHOW);
+
+    // InputManager에 윈도우 핸들 전달
+    InputManager::Get()->SetWindowHandle(g_Hwnd);
 
     if (!g_Engine.Initialize(g_Hwnd, WINDOW_WIDTH, WINDOW_HEIGHT))
         return -1;

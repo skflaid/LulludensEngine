@@ -22,8 +22,14 @@ public:
     void SetKeyState(int vKey, bool isPressed);
     void SetMousePosition(int x, int y);
 
+    // 마우스 캡처 관련 함수들 (FPS 카메라용)
+    void SetWindowHandle(HWND hwnd);
+    void CaptureMouse();   // 마우스 숨기고 창에 고정
+    void ReleaseMouse();   // 마우스 복원
+    bool IsCaptured() const { return m_MouseCaptured; }
+
     // 소멸자에서 인스턴스 해제
-    ~InputManager() = default;
+    ~InputManager();
 
 private:
     // 생성자를 private으로 막아 외부 생성을 방지
@@ -43,4 +49,8 @@ private:
     POINT m_LastMousePos = { 0, 0 };
     POINT m_MouseDelta = { 0, 0 };
     bool m_IsFirstMouseUpdate = true;
+
+    // 마우스 캡처 관련
+    HWND m_Hwnd = nullptr;
+    bool m_MouseCaptured = false;
 };
