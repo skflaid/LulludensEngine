@@ -183,6 +183,9 @@
     <ClInclude Include="Renderer\Components\SkeletalAnimationComponent.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\WICTextureLoader.h">
+      <Filter>Common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="App\EntityInspector.cpp">
@@ -250,6 +253,9 @@
     </ClCompile>
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp">
       <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\WICTextureLoader.cpp">
+      <Filter>Common</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
