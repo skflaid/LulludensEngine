@@ -22,6 +22,12 @@ struct RigidbodyComponent : public IComponent {
     float linearDamping = 0.05f;
     float inertia = 1.0f;//관성
 
+    bool isAwake = true;      // 깨어있는지 여부
+    float sleepTimer = 0.0f;  // 정지 상태 지속 시간
+
+    // 임계값 설정 (이 값보다 속도가 낮으면 정지한 것으로 간주)
+    float sleepThreshold = 0.05f;
+
     // Force accumulation
     XMFLOAT3 forceAccumulator = { 0.0f, 0.0f, 0.0f };
     XMFLOAT3 torqueAccumulator = { 0.0f, 0.0f, 0.0f };

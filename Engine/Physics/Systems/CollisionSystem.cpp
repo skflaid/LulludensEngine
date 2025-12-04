@@ -1,4 +1,4 @@
-﻿#include "CollisionSystem.h"
+#include "CollisionSystem.h"
 #include "Core/Entity.h"
 #include "../Components/ColliderComponent.h"
 #include "../../Renderer/Components/TransformComponent.h"
@@ -645,36 +645,76 @@ bool CollisionSystem::TestSphereSphere(Entity* entityA, Entity* entityB) {
     return false;
 }
 
-// Box-Sphere 충돌 검사
 bool CollisionSystem::TestBoxSphere(Entity* boxEntity, Entity* sphereEntity) {
     auto* boxColl = static_cast<BoxCollider*>(boxEntity->GetCollider());
     auto* sphereColl = static_cast<SphereCollider*>(sphereEntity->GetCollider());
     auto* boxTrans = boxEntity->GetComponent<TransformComponent>();
     auto* sphereTrans = sphereEntity->GetComponent<TransformComponent>();
 
-    XMVECTOR sphereCenter = XMLoadFloat3(&sphereTrans->position);
-    XMVECTOR boxCenter = XMLoadFloat3(&boxTrans->position);
+    // 1. 데이터 로드
+    XMVECTOR sphereCenterWorld = XMLoadFloat3(&sphereTrans->position);
+    XMVECTOR boxCenterWorld = XMLoadFloat3(&boxTrans->position);
     XMVECTOR boxHalfSize = XMLoadFloat3(&boxColl->size) * 0.5f;
 
-    // 구의 중심을 박스의 로컬 좌표계로 변환
-    XMVECTOR sphereCenterInBoxSpace = sphereCenter - boxCenter;
+    // 2. [중요] 박스의 회전을 고려하여 Sphere를 박스의 '로컬 공간(Local Space)'으로 변환해야 함
+    // 박스가 회전해 있어도, 로컬 공간에서는 축에 정렬된 상태(AABB)처럼 계산할 수 있기 때문입니다.
 
-    // 박스 내에서 구의 중심에 가장 가까운 점(closestPoint)을 찾음
-    XMVECTOR closestPoint = XMVectorMax(-boxHalfSize, XMVectorMin(sphereCenterInBoxSpace, boxHalfSize));
+    // 박스의 월드 행렬 구성 (Rotation * Translation)
+    // (TransformComponent에 회전이 Quaternion으로 저장되어 있다고 가정: rotation)
+    // 만약 Euler 각도라면 XMMatrixRotationRollPitchYaw 등을 사용하세요.
+    XMVECTOR boxRot = XMLoadFloat3(&boxTrans->rotation);
+    XMMATRIX boxWorldMat = XMMatrixRotationQuaternion(boxRot) * XMMatrixTranslationFromVector(boxCenterWorld);
 
-    float distSq = XMVectorGetX(XMVector3LengthSq(sphereCenterInBoxSpace - closestPoint));
+    // 월드 -> 로컬 변환 행렬 (Inverse)
+    XMMATRIX boxInvMat = XMMatrixInverse(nullptr, boxWorldMat);
+
+    // 구의 중심을 박스 로컬 공간으로 이동
+    XMVECTOR sphereCenterLocal = XMVector3TransformCoord(sphereCenterWorld, boxInvMat);
+
+    // 3. 로컬 공간에서 Closest Point(가장 가까운 점) 찾기 (Clamp)
+    // 로컬 공간이므로 박스는 원점(0,0,0)에 있고 축에 정렬되어 있음
+    XMVECTOR closestPointLocal = XMVectorMax(-boxHalfSize, XMVectorMin(sphereCenterLocal, boxHalfSize));
+
+    // 4. 거리 검사 (로컬 공간에서 수행해도 결과는 같음)
+    XMVECTOR distVec = sphereCenterLocal - closestPointLocal;
+    float distSq = XMVectorGetX(XMVector3LengthSq(distVec));
 
     if (distSq < sphereColl->radius * sphereColl->radius) {
+        // 충돌 발생!
         boxColl->hasContact = sphereColl->hasContact = true;
 
-        float penetration = sphereColl->radius - sqrt(distSq);
-        XMVECTOR normal = XMVector3Normalize(sphereCenter - (boxCenter + closestPoint));
+        // 5. [핵심] 로컬에서 구한 접점을 다시 '월드 좌표'로 변환하여 저장
+        // 이 좌표가 있어야 ResolveCollisions에서 회전력(Torque)을 계산할 수 있음
+        XMVECTOR contactPointWorld = XMVector3TransformCoord(closestPointLocal, boxWorldMat);
 
-        XMStoreFloat3(&boxColl->contactNormal, -normal);
-        XMStoreFloat3(&sphereColl->contactNormal, normal);
+        float distance = sqrt(distSq);
+        float penetration = sphereColl->radius - distance;
+
+        // Normal 계산 (월드 기준)
+        // 주의: 거리가 0에 가까우면(중심이 겹치면) 임의의 축으로 밀어내야 함
+        XMVECTOR normalWorld;
+        if (distance > 0.0001f) {
+            normalWorld = XMVector3Normalize(sphereCenterWorld - contactPointWorld);
+        }
+        else {
+            normalWorld = XMVectorSet(0, 1, 0, 0); // 예외 처리
+        }
+
+        // 6. 데이터 저장
+        // Normal 저장 (A는 반대, B는 정방향)
+        XMStoreFloat3(&boxColl->contactNormal, -normalWorld);
+        XMStoreFloat3(&sphereColl->contactNormal, normalWorld);
+
+        // Depth 저장
         boxColl->penetrationDepth = sphereColl->penetrationDepth = penetration;
+
+        // [이 부분이 추가됨] 월드 좌표계의 정확한 접점 저장 -> Torque 계산의 핵심!
+        XMStoreFloat3(&boxColl->contactPoint, contactPointWorld);
+        XMStoreFloat3(&sphereColl->contactPoint, contactPointWorld);
+
         return true;
     }
+
     return false;
 }
 
@@ -869,174 +909,185 @@ bool CollisionSystem::TestMeshBox(Entity* meshEntity, Entity* boxEntity) {
 }
 
 void CollisionSystem::ResolveCollisions() {
-    // --- 안정성을 위한 상수들 ---
-    const float slop = 0.01f;   // 1cm 이내의 미세한 겹침은 무시
-    const float percent = 0.8f; // 겹침의 80%를 보정하도록 값을 높임!
+    const float slop = 0.01f;
+    const float percent = 0.8f;
 
     for (const auto& pair : m_CollisionPairs) {
+        // 1. 컴포넌트 가져오기
         auto* rbA = pair.entityA->GetComponent<RigidbodyComponent>();
         auto* rbB = pair.entityB->GetComponent<RigidbodyComponent>();
         auto* collA = pair.entityA->GetCollider();
-        auto* collB = pair.entityB->GetCollider();
         auto* transA = pair.entityA->GetComponent<TransformComponent>();
         auto* transB = pair.entityB->GetComponent<TransformComponent>();
 
-        if (!collA || !collB) continue;
+        if (!collA || !pair.entityB->GetCollider()) continue;
 
-        // 질량이 없는 정적 물체들 간의 충돌은 처리할 필요 없음
-        float invMassA = (rbA && !rbA->isKinematic) ? 1.0f / rbA->mass : 0.0f;
-        float invMassB = (rbB && !rbB->isKinematic) ? 1.0f / rbB->mass : 0.0f;
+        // 2. 질량 및 관성 설정
+        float invMassA = (rbA && !rbA->isKinematic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
+        float invMassB = (rbB && !rbB->isKinematic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
+        float invInertiaA = (rbA && !rbA->isKinematic && rbA->inertia > 0.0f) ? 1.0f / rbA->inertia : 0.0f;
+        float invInertiaB = (rbB && !rbB->isKinematic && rbB->inertia > 0.0f) ? 1.0f / rbB->inertia : 0.0f;
+
         float totalInvMass = invMassA + invMassB;
         if (totalInvMass <= 0.0f) continue;
 
-        // --- 1. 속도 보정을 먼저 수행 (including rotation) ---
-        XMVECTOR normal = XMLoadFloat3(&collA->contactNormal);
+        // 3. Normal 및 데이터 준비
+        // [중요] Normal은 B -> A 방향 (바닥에서 큐브를 찌르는 방향)
+        XMVECTOR normal = -XMLoadFloat3(&collA->contactNormal);
+        normal = XMVector3Normalize(normal);
 
-        XMVECTOR velA = (rbA) ? XMLoadFloat3(&rbA->velocity) : XMVectorZero();
-        XMVECTOR velB = (rbB) ? XMLoadFloat3(&rbB->velocity) : XMVectorZero();
-
-        // 두 물체가 서로 멀어지고 있다면 처리할 필요 없음
-        // But we need to INCLUDE angular velocity in this check!
-        
-        // Get contact point and lever arms
         XMVECTOR contactPoint = XMLoadFloat3(&collA->contactPoint);
         XMVECTOR centerA = XMLoadFloat3(&transA->position);
         XMVECTOR centerB = XMLoadFloat3(&transB->position);
-        XMVECTOR rA = contactPoint - centerA;
+        XMVECTOR rA = contactPoint - centerA; // 무게중심에서 접점까지의 벡터
         XMVECTOR rB = contactPoint - centerB;
 
-        // Calculate relative velocity AT THE CONTACT POINT (including rotation)
-        XMVECTOR angVelA = (rbA && !rbA->isKinematic) ? XMLoadFloat3(&rbA->angularVelocity) : XMVectorZero();
-        XMVECTOR angVelB = (rbB && !rbB->isKinematic) ? XMLoadFloat3(&rbB->angularVelocity) : XMVectorZero();
-        
+        // 4. 속도 가져오기
+        XMVECTOR velA = (rbA) ? XMLoadFloat3(&rbA->velocity) : XMVectorZero();
+        XMVECTOR velB = (rbB) ? XMLoadFloat3(&rbB->velocity) : XMVectorZero();
+        XMVECTOR angVelA = (rbA) ? XMLoadFloat3(&rbA->angularVelocity) : XMVectorZero();
+        XMVECTOR angVelB = (rbB) ? XMLoadFloat3(&rbB->angularVelocity) : XMVectorZero();
+
+        // 5. 상대 속도 계산 (A - B) : 표준 관례
         XMVECTOR velAtContactA = velA + XMVector3Cross(angVelA, rA);
         XMVECTOR velAtContactB = velB + XMVector3Cross(angVelB, rB);
-        XMVECTOR relativeVelContact = velAtContactB - velAtContactA;
-        
-        float velAlongNormal = XMVectorGetX(XMVector3Dot(relativeVelContact, normal));
+        XMVECTOR relativeVel = velAtContactA - velAtContactB; // [수정] A - B 로 변경
 
-        // Enhanced logging
-        XMFLOAT3 normalF, contactPtF, centerAF, rAF;
-        XMStoreFloat3(&normalF, normal);
-        XMStoreFloat3(&contactPtF, contactPoint);
-        XMStoreFloat3(&centerAF, centerA);
-        XMStoreFloat3(&rAF, rA);
-        
-        char detailedLog[512];
-        sprintf_s(detailedLog,
-            "=== COLLISION ===\n"
-            "Normal: (%.3f, %.3f, %.3f)\n"
-            "ContactPt: (%.3f, %.3f, %.3f)\n"
-            "CenterA: (%.3f, %.3f, %.3f)\n"
-            "rA: (%.3f, %.3f, %.3f)\n"
-            "velAlongNormal: %.3f\n",
-            normalF.x, normalF.y, normalF.z,
-            contactPtF.x, contactPtF.y, contactPtF.z,
-            centerAF.x, centerAF.y, centerAF.z,
-            rAF.x, rAF.y, rAF.z,
-            velAlongNormal
-        );
-        OutputDebugStringA(detailedLog);
+        // 접근 속도 (음수여야 충돌 중)
+        float velAlongNormal = XMVectorGetX(XMVector3Dot(relativeVel, normal));
 
-        if (velAlongNormal <= 0) {
-            // Calculate restitution
-            float e = (rbA && rbB) ? min(rbA->restitution, rbB->restitution) :
-                (rbA ? rbA->restitution : (rbB ? rbB->restitution : 0.0f));
+        // 이미 멀어지고 있다면(양수) 처리 안 함
+        if (velAlongNormal > 0) {
+            // 단, 위치 보정은 필요할 수 있으므로 여기서는 continue 하지 않고 
+            // 아래의 Impulse 로직만 건너뛰는 것이 더 정확하지만, 
+            // 덜덜 떨림 방지를 위해 보통은 여기서 끊어줍니다.
+            // 하지만 터널링 방지를 위해 위치 보정은 무조건 실행되게 구조를 짭니다.
+            goto POSITION_CORRECTION;
+        }
 
-            // Calculate angular contribution to impulse denominator
-            // This is KEY for proper physics!
-            float angularEffect_A = 0.0f;
-            float angularEffect_B = 0.0f;
-            
-            if (rbA && !rbA->isKinematic && rbA->inertia > 0.0f) {
-                XMVECTOR rA_cross_n = XMVector3Cross(rA, normal);
-                angularEffect_A = XMVectorGetX(XMVector3LengthSq(rA_cross_n)) / rbA->inertia;
-            }
-            if (rbB && !rbB->isKinematic && rbB->inertia > 0.0f) {
-                XMVECTOR rB_cross_n = XMVector3Cross(rB, normal);
-                angularEffect_B = XMVectorGetX(XMVector3LengthSq(rB_cross_n)) / rbB->inertia;
-            }
+        // ==========================================
+        // [Impulse Solver] : 반발력 및 마찰력
+        // ==========================================
+        {
+            float e = 0.5f; // 반발 계수
 
-            // Proper impulse denominator with angular terms
-            float totalEffectiveMass = invMassA + invMassB + angularEffect_A + angularEffect_B;
-            if (totalEffectiveMass <= 0.0f) totalEffectiveMass = 1.0f;  // Safety
-            
-            float j = -(1.0f + e) * velAlongNormal / totalEffectiveMass;
+            // 각충격량(Angular Impulse) 분모 계산
+            XMVECTOR rAxN = XMVector3Cross(rA, normal);
+            XMVECTOR rBxN = XMVector3Cross(rB, normal);
+            float angConstraintA = XMVectorGetX(XMVector3LengthSq(rAxN)) * invInertiaA;
+            float angConstraintB = XMVectorGetX(XMVector3LengthSq(rBxN)) * invInertiaB;
+
+            float effectiveMass = totalInvMass + angConstraintA + angConstraintB;
+            if (effectiveMass < 0.0001f) effectiveMass = 0.0001f;
+
+            // 충격량 크기 j 계산
+            float j = -(1.0f + e) * velAlongNormal / effectiveMass;
+
+            // 충격량 벡터 (B->A 방향)
             XMVECTOR impulse = normal * j;
 
-            // Log impulse magnitude
-            char impLog[128];
-            sprintf_s(impLog, "j (impulse mag): %.3f, denom: %.4f (ang_A:%.4f, ang_B:%.4f)\n", 
-                j, totalEffectiveMass, angularEffect_A, angularEffect_B);
-            OutputDebugStringA(impLog);
-
-            // 1) Apply linear velocity impulse
+            // [핵심 수정] 속도 적용 부호 변경! 
+            // A는 Normal 방향으로 힘을 받으므로 더해준다(+)
+            // B는 반대 방향이므로 빼준다(-)
             if (rbA && !rbA->isKinematic) {
-                XMStoreFloat3(&rbA->velocity, velA - impulse * invMassA);
+                // 선속도: F = ma => dv = J * invM
+                XMStoreFloat3(&rbA->velocity, XMLoadFloat3(&rbA->velocity) + impulse * invMassA);
+                // 각속도: Torque = r x F
+                XMVECTOR torque = XMVector3Cross(rA, impulse);
+                XMStoreFloat3(&rbA->angularVelocity, XMLoadFloat3(&rbA->angularVelocity) + torque * invInertiaA);
             }
             if (rbB && !rbB->isKinematic) {
-                XMStoreFloat3(&rbB->velocity, velB + impulse * invMassB);
+                XMStoreFloat3(&rbB->velocity, XMLoadFloat3(&rbB->velocity) - impulse * invMassB);
+                XMVECTOR torque = XMVector3Cross(rB, -impulse); // B는 -impulse를 받음
+                XMStoreFloat3(&rbB->angularVelocity, XMLoadFloat3(&rbB->angularVelocity) + torque * invInertiaB);
             }
 
-            // 2) Apply angular velocity impulse (NO arbitrary scaling!)
-            if (rbA && !rbA->isKinematic) {
-                // Impulse ON A is in -normal direction (pushes A away from B)
-                XMVECTOR impulseOnA = -impulse;
-                XMVECTOR torqueA = XMVector3Cross(rA, impulseOnA);
-                
-                // Angular impulse: Δω = I^-1 * τ
-                // Since τ = r × J, and we integrate over dt=1 (impulse), we get:
-                // Δω = (r × J) / I
-                XMVECTOR deltaAngVelA = torqueA / rbA->inertia;
-                
-                XMFLOAT3 torqueA3, deltaAngVelA3;
-                XMStoreFloat3(&torqueA3, torqueA);
-                XMStoreFloat3(&deltaAngVelA3, deltaAngVelA);
-                
-                // Apply directly to angular velocity (not accumulated torque)
-                XMVECTOR newAngVelA = angVelA + deltaAngVelA;
-                XMStoreFloat3(&rbA->angularVelocity, newAngVelA);
-                
-                char torqueLogA[256];
-                sprintf_s(torqueLogA, "A: Torque(%.3f,%.3f,%.3f) => ΔangVel(%.3f,%.3f,%.3f)\n",
-                    torqueA3.x, torqueA3.y, torqueA3.z,
-                    deltaAngVelA3.x, deltaAngVelA3.y, deltaAngVelA3.z);
-                OutputDebugStringA(torqueLogA);
-            }
-            if (rbB && !rbB->isKinematic) {
-                // Impulse ON B is in +normal direction
-                XMVECTOR impulseOnB = impulse;
-                XMVECTOR torqueB = XMVector3Cross(rB, impulseOnB);
-                XMVECTOR deltaAngVelB = torqueB / rbB->inertia;
-                
-                XMFLOAT3 torqueB3, deltaAngVelB3;
-                XMStoreFloat3(&torqueB3, torqueB);
-                XMStoreFloat3(&deltaAngVelB3, deltaAngVelB);
-                
-                XMVECTOR newAngVelB = angVelB + deltaAngVelB;
-                XMStoreFloat3(&rbB->angularVelocity, newAngVelB);
-                
-                char torqueLogB[256];
-                sprintf_s(torqueLogB, "B: Torque(%.3f,%.3f,%.3f) => ΔangVel(%.3f,%.3f,%.3f)\n",
-                    torqueB3.x, torqueB3.y, torqueB3.z,
-                    deltaAngVelB3.x, deltaAngVelB3.y, deltaAngVelB3.z);
-                OutputDebugStringA(torqueLogB);
+            // ------------------------------------------
+            // [Friction Solver] : 마찰력 (접선 방향)
+            // ------------------------------------------
+            // 충격량을 적용했으니 상대 속도를 재계산할 수도 있지만, 보통 이전 프레임 속도로 근사합니다.
+            // 접선 벡터 (Tangent)
+            XMVECTOR tangent = relativeVel - (normal * velAlongNormal);
+            float tangentLenSq = XMVectorGetX(XMVector3LengthSq(tangent));
+
+            if (tangentLenSq > 0.0001f) {
+                tangent = XMVector3Normalize(tangent);
+
+                // 마찰 질량 계산
+                XMVECTOR rAxT = XMVector3Cross(rA, tangent);
+                XMVECTOR rBxT = XMVector3Cross(rB, tangent);
+                float angFricA = XMVectorGetX(XMVector3LengthSq(rAxT)) * invInertiaA;
+                float angFricB = XMVectorGetX(XMVector3LengthSq(rBxT)) * invInertiaB;
+                float frictionMass = totalInvMass + angFricA + angFricB;
+
+                // 마찰 충격량 크기 jt
+                float velAlongTangent = XMVectorGetX(XMVector3Dot(relativeVel, tangent));
+                float jt = -velAlongTangent / frictionMass;
+
+                // 쿨롱 마찰 제한 (Clamp)
+                const float mu = 0.5f;
+                float maxJt = j * mu;
+                if (abs(jt) > maxJt) {
+                    jt = (jt > 0 ? 1.0f : -1.0f) * maxJt;
+                }
+
+                XMVECTOR frictionImpulse = tangent * jt;
+
+                // [핵심 수정] 마찰 적용 부호 (반발력과 동일한 논리)
+                // jt가 음수(상대속도 반대)로 계산되었으므로 tangent * jt는 '운동을 방해하는 방향'임
+                if (rbA && !rbA->isKinematic) {
+                    XMStoreFloat3(&rbA->velocity, XMLoadFloat3(&rbA->velocity) + frictionImpulse * invMassA);
+                    XMVECTOR torque = XMVector3Cross(rA, frictionImpulse);
+                    XMStoreFloat3(&rbA->angularVelocity, XMLoadFloat3(&rbA->angularVelocity) + torque * invInertiaA);
+                }
+                if (rbB && !rbB->isKinematic) {
+                    XMStoreFloat3(&rbB->velocity, XMLoadFloat3(&rbB->velocity) - frictionImpulse * invMassB);
+                    XMVECTOR torque = XMVector3Cross(rB, -frictionImpulse);
+                    XMStoreFloat3(&rbB->angularVelocity, XMLoadFloat3(&rbB->angularVelocity) + torque * invInertiaB);
+                }
             }
         }
 
-        // --- 2. 그 다음 위치 보정을 수행 ---
+        // ==========================================
+        // [Position Correction] : 위치 보정 (터널링 방지)
+        // ==========================================
+    POSITION_CORRECTION:
         float penetration = collA->penetrationDepth;
         if (penetration > slop) {
-            // 보정량 계산
             XMVECTOR correction = normal * (max(penetration - slop, 0.0f) / totalInvMass) * percent;
 
-            // 위치 보정 적용
+            // A는 Normal 방향(위)으로 꺼내줌 (+)
             if (rbA && !rbA->isKinematic) {
-                XMStoreFloat3(&transA->position, XMLoadFloat3(&transA->position) - correction * invMassA);
+                XMStoreFloat3(&transA->position, XMLoadFloat3(&transA->position) + correction * invMassA);
             }
+            // B는 반대 방향(아래)으로 밀어줌 (-)
             if (rbB && !rbB->isKinematic) {
-                XMStoreFloat3(&transB->position, XMLoadFloat3(&transB->position) + correction * invMassB);
+                XMStoreFloat3(&transB->position, XMLoadFloat3(&transB->position) - correction * invMassB);
             }
         }
+    }
+}
+
+void CollisionSystem::CheckSleep(RigidbodyComponent* rb, float deltaTime) {
+    if (!rb->isAwake) return;
+
+    // 속도와 회전 속도가 모두 매우 작다면 타이머 증가
+    float speedSq = XMVectorGetX(XMVector3LengthSq(XMLoadFloat3(&rb->velocity)));
+    // (회전 속도도 있다면 체크 필요)
+
+    if (speedSq < rb->sleepThreshold) {
+        rb->sleepTimer += deltaTime;
+
+        // 0.5초 이상 정지 상태라면 재운다
+        if (rb->sleepTimer > 0.5f) {
+            rb->isAwake = false;
+
+            // 확실하게 멈추기 위해 속도 0으로 초기화
+            rb->velocity = { 0.0f, 0.0f, 0.0f };
+        }
+    }
+    else {
+        // 다시 움직이면 타이머 리셋
+        rb->sleepTimer = 0.0f;
     }
 }
