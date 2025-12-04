@@ -910,7 +910,7 @@ bool CollisionSystem::TestMeshBox(Entity* meshEntity, Entity* boxEntity) {
 
 void CollisionSystem::ResolveCollisions() {
     const float slop = 0.01f;
-    const float percent = 0.8f;
+    const float percent = 0.4f;
 
     for (const auto& pair : m_CollisionPairs) {
         // 1. 컴포넌트 가져오기
@@ -1065,29 +1065,5 @@ void CollisionSystem::ResolveCollisions() {
                 XMStoreFloat3(&transB->position, XMLoadFloat3(&transB->position) - correction * invMassB);
             }
         }
-    }
-}
-
-void CollisionSystem::CheckSleep(RigidbodyComponent* rb, float deltaTime) {
-    if (!rb->isAwake) return;
-
-    // 속도와 회전 속도가 모두 매우 작다면 타이머 증가
-    float speedSq = XMVectorGetX(XMVector3LengthSq(XMLoadFloat3(&rb->velocity)));
-    // (회전 속도도 있다면 체크 필요)
-
-    if (speedSq < rb->sleepThreshold) {
-        rb->sleepTimer += deltaTime;
-
-        // 0.5초 이상 정지 상태라면 재운다
-        if (rb->sleepTimer > 0.5f) {
-            rb->isAwake = false;
-
-            // 확실하게 멈추기 위해 속도 0으로 초기화
-            rb->velocity = { 0.0f, 0.0f, 0.0f };
-        }
-    }
-    else {
-        // 다시 움직이면 타이머 리셋
-        rb->sleepTimer = 0.0f;
     }
 }

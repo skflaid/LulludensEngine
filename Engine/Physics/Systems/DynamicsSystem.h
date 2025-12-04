@@ -2,6 +2,7 @@
 #include "Core/ISystem.h"
 #include "Core/Entity.h"
 #include "Physics/PhysicsWorld.h"
+#include "Components/RigidbodyComponent.h"
 #include <vector>
 
 class DynamicsSystem : public ISystem {
@@ -28,6 +29,8 @@ private:
     //회전운동
     void IntegrateAngularVelocity(Entity* entity, float deltaTime);
     void IntegrateRotation(Entity* entity, float deltaTime);
+
+    void CheckSleep(RigidbodyComponent* rb, float deltaTime);
 
 private:
     PhysicsWorld* m_PhysicsWorld;

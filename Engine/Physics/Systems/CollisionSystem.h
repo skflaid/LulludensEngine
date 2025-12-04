@@ -33,7 +33,6 @@ private:
     bool CheckAABBCollision(Entity* entityA, Entity* entityB);
     void NarrowPhaseDetection();
     void ResolveCollisions();
-    void CheckSleep(RigidbodyComponent* rb, float deltaTime);
 
     // === 충돌 타입별 검사 함수 선언 ===
     bool TestBoxBox(Entity* entityA, Entity* entityB);

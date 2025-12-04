@@ -120,7 +120,7 @@ void GameEngine::CreateEntities()
     m_Entities.push_back(std::move(cameraEntity));
 
     // Cube
-    /*for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5; i++) {
         auto cube = std::make_unique<Entity>(5+i);
         auto t = cube->AddComponent<TransformComponent>();
         t->SetPosition(0.0f, 20.0f, 0.0f);
@@ -133,14 +133,14 @@ void GameEngine::CreateEntities()
         m_PhysicsWorld->RegisterEntity(cube.get());
         m_RenderSystem->RegisterEntity(cube.get());
         m_Entities.push_back(std::move(cube));
-    }*/
+    }
 
     // Ground
     auto ground = std::make_unique<Entity>(2);
     auto gt = ground->AddComponent<TransformComponent>();
     gt->SetPosition(0.0f, 0.0f, 0.0f);
-    gt->SetScale(10.0f, 0.1f, 10.0f);
-    gt->SetRotation(0.0f, 0.0f, 0.0f);
+    gt->SetScale(10.0f, 1.1f, 10.0f);
+    gt->SetRotation(0.50f, 0.0f, 0.0f);
     auto rb = ground->AddComponent<RigidbodyComponent>();
     rb->isKinematic = true;
     ground->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
@@ -155,7 +155,7 @@ void GameEngine::CreateEntities()
     // FBX 모델 로드 예제
     // 주의: 실제 FBX 파일 경로로 변경해야 합니다.
     //LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f, true);
-    LoadFBXModel("Models/Dancing Twerk.fbx", 1, 0.0f, 0.0f, 0.0f, 0.05f, false);
+    //LoadFBXModel("Models/Dancing Twerk.fbx", 1, 0.0f, 0.0f, 0.0f, 0.05f, false);
 }
 
 void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId,

@@ -3,6 +3,7 @@
 #include "../Components/RigidbodyComponent.h"
 #include "../Components/ColliderComponent.h"
 #include "../../Renderer/Components/TransformComponent.h"
+#include "CollisionSystem.h"
 #include <Windows.h>
 #include <algorithm>
 #include <DirectXMath.h>
@@ -34,6 +35,14 @@ void DynamicsSystem::Update(float deltaTime) {
 
         auto* rb = entity->GetComponent<RigidbodyComponent>();
         if (!rb) continue;
+
+        // 1. Sleep 상태 체크 및 상태 전환
+        CheckSleep(rb, deltaTime);
+
+        // 2. 자고 있으면(Sleep) 물리 연산 건너뛰기
+        if (!rb->isAwake) {
+            continue;
+        }
 
         // 2. 중력 적용 (단순히 아래로 향하는 힘을 더함)
         ApplyGravity(entity, deltaTime);
@@ -196,4 +205,28 @@ void DynamicsSystem::IntegrateRotation(Entity* entity, float deltaTime) {
     rot = XMVectorAdd(rot, deltaRot);
 
     XMStoreFloat3(&transform->rotation, rot);
+}
+
+void DynamicsSystem::CheckSleep(RigidbodyComponent* rb, float deltaTime) {
+    const float linearThreshold = 0.5f;  // 정지 간주 선속도 (조절 필요)
+    const float angularThreshold = 2.0f; // 정지 간주 각속도 (조절 필요)
+
+    float speedSq = XMVectorGetX(XMVector3LengthSq(XMLoadFloat3(&rb->velocity)));
+    float angSpeedSq = XMVectorGetX(XMVector3LengthSq(XMLoadFloat3(&rb->angularVelocity)));
+
+    // 움직임이 거의 없는지 확인
+    if (speedSq < linearThreshold && angSpeedSq < angularThreshold) {
+        rb->sleepTimer += deltaTime;
+
+        // 일정 시간(예: 0.5초) 이상 정지 상태 유지 시 Sleep 전환
+        if (rb->sleepTimer > 0.5f) {
+            rb->isAwake = false;
+            rb->velocity = { 0.0f, 0.0f, 0.0f };        // 완전 정지
+            rb->angularVelocity = { 0.0f, 0.0f, 0.0f }; // 회전도 정지
+        }
+    }
+    else {
+        // 다시 움직이면 타이머 리셋
+        rb->sleepTimer = 0.0f;
+    }
 }
