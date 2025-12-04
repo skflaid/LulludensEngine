@@ -102,19 +102,46 @@ static void EvaluateBoneLocal(const ModelBoneAnimation& anim,
     double time,
     XMFLOAT4X4& out)
 {
-    // 바인드 포즈에서 위치만 가져온다
-    XMFLOAT3 bindT = ExtractBindTranslation(bindBone.BindTransform);
+    // 1) 바인드 포즈 S/R/T 분해
+    XMFLOAT3 bindS;
+    XMFLOAT4 bindR;
+    XMFLOAT3 bindT;
+    DecomposeSRT(bindBone.BindTransform, bindS, bindR, bindT);
 
-    // T: 없으면 바인드 위치, S: 없으면 1, R: 없으면 단위
-    XMFLOAT3 T = SampleVector3(anim.Translations, time, bindT);
-    XMFLOAT3 S = SampleVector3(anim.Scales, time, XMFLOAT3(1, 1, 1));
-    XMFLOAT4 R = SampleQuat(anim.Rotations, time, XMFLOAT4(0, 0, 0, 1));
+    // 2) Translation
+    //    - 루트 본만 애니메이션 Translation 사용
+    //    - 나머지 본은 바인드 포즈 위치 유지
+    XMFLOAT3 T = bindT;
+    if (bindBone.ParentIndex < 0 && !anim.Translations.empty()) {
+        T = SampleVector3(anim.Translations, time, bindT);
+    }
 
+    // 3) Scale
+    XMFLOAT3 S = bindS;
+    if (!anim.Scales.empty()) {
+        S = SampleVector3(anim.Scales, time, bindS);
+    }
+
+    // 4) Rotation
+    //    애니메이션 회전을 "델타"로 보고 바인드 회전에 곱해준다.
+    //    (없으면 항등 쿼터니언)
+    XMFLOAT4 deltaR = { 0.0f, 0.0f, 0.0f, 1.0f };
+    if (!anim.Rotations.empty()) {
+        deltaR = SampleQuat(anim.Rotations, time, deltaR);
+    }
+
+    XMVECTOR qBind = XMLoadFloat4(&bindR);
+    XMVECTOR qDelta = XMLoadFloat4(&deltaR);
+    XMVECTOR qFinal = XMQuaternionMultiply(qDelta, qBind); // 최종 회전 = delta * bind
+    XMFLOAT4 R;
+    XMStoreFloat4(&R, qFinal);
+
+    // 5) 최종 로컬 행렬 S * R * T
     XMMATRIX mS = XMMatrixScaling(S.x, S.y, S.z);
     XMMATRIX mR = XMMatrixRotationQuaternion(XMLoadFloat4(&R));
     XMMATRIX mT = XMMatrixTranslation(T.x, T.y, T.z);
 
-    XMMATRIX M = mS * mR * mT;
+    XMMATRIX M = mS * mR * mT;   // row-vector 기준
     XMStoreFloat4x4(&out, M);
 }
 
@@ -201,13 +228,13 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
                 !boneAnim.Rotations.empty() ||
                 !boneAnim.Scales.empty())
             {
-                // 바인드 위치를 기본으로 애니메이션을 덮어쓴다
+                //  바인드 포즈를 기본으로, 애니 키를 덮어쓴다
                 EvaluateBoneLocal(boneAnim, bindBone, animTime, localTransforms[i]);
                 continue;
             }
         }
 
-        // 애니 키가 전혀 없는 본은 바인드 포즈 그대로
+        // 애니 키가 하나도 없는 본은 바인드 포즈 그대로
         localTransforms[i] = bindBone.BindTransform;
     }
 
@@ -215,36 +242,60 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
     std::function<void(size_t)> computeWorld =
         [&](size_t index)
         {
-            if (computed[index]) return;
+            if (computed[index])
+                return;
 
             int parentIndex = skeleton->Bones[index].ParentIndex;
             XMMATRIX localM = XMLoadFloat4x4(&localTransforms[index]);
 
-            if (parentIndex >= 0) {
-                computeWorld(parentIndex);
+            if (parentIndex >= 0 &&
+                parentIndex < (int)boneCount &&
+                parentIndex != (int)index)       // 자기 자신을 부모로 보는 경우 방지
+            {
+                computeWorld((size_t)parentIndex);
                 XMMATRIX parentWorld = XMLoadFloat4x4(&globalTransforms[parentIndex]);
+
+                // row-vector 기준: world = local * parent
                 XMMATRIX world = localM * parentWorld;
                 XMStoreFloat4x4(&globalTransforms[index], world);
             }
-            else {
+            else
+            {
+                // 루트 / 이상한 부모는 그냥 로컬=월드
                 XMStoreFloat4x4(&globalTransforms[index], localM);
             }
 
             computed[index] = true;
         };
 
-    for (size_t i = 0; i < boneCount; ++i) {
+    for (size_t i = 0; i < boneCount; ++i)
         computeWorld(i);
-    }
+
+
 
     // 최종 스키닝 행렬 = offset * global
+    // 최종 스키닝 행렬 = offset * global
+    skeleton->FinalBoneTransforms.resize(boneCount);
+
+    // 각 본의 바인드 포즈 글로벌 변환 계산
+    std::vector<DirectX::XMMATRIX> globalBind(boneCount);
+    for (size_t i = 0; i < boneCount; ++i) {
+        int p = skeleton->Bones[i].ParentIndex;
+        DirectX::XMMATRIX localM = DirectX::XMLoadFloat4x4(&skeleton->Bones[i].BindTransform);
+        if (p >= 0) {
+            globalBind[i] = DirectX::XMMatrixMultiply(localM, globalBind[p]);
+        }
+        else {
+            globalBind[i] = localM;
+        }
+    }
+
+    // 최종 스키닝 행렬 = offset * bindGlobal
     skeleton->FinalBoneTransforms.resize(boneCount);
     for (size_t i = 0; i < boneCount; ++i) {
-        XMMATRIX global = XMLoadFloat4x4(&globalTransforms[i]);
-        XMMATRIX offset = XMLoadFloat4x4(&skeleton->Bones[i].Offset);
-
-        // 흔히 쓰는 형태는 offset * global (Assimp 기준)
-        XMMATRIX finalM = offset * global;
-        XMStoreFloat4x4(&skeleton->FinalBoneTransforms[i], finalM);
+        DirectX::XMMATRIX globalAnimated = DirectX::XMLoadFloat4x4(&globalTransforms[i]);
+        DirectX::XMMATRIX offset = DirectX::XMLoadFloat4x4(&skeleton->Bones[i].Offset);
+        DirectX::XMMATRIX finalM = DirectX::XMMatrixMultiply(offset, globalAnimated);
+        DirectX::XMStoreFloat4x4(&skeleton->FinalBoneTransforms[i], finalM);
     }
 }
