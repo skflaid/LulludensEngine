@@ -31,6 +31,7 @@ inline void DebugPrint(const char* fmt, ...)
 
 static void MakeBindLocalInModel(Model& model)
 {
+    /*
     using namespace DirectX;
     auto& bones = model.Bones;
     size_t n = bones.size();
@@ -59,6 +60,8 @@ static void MakeBindLocalInModel(Model& model)
         }
         XMStoreFloat4x4(&bones[i].BindTransform, loc); // 이제 '로컬 바인드'
     }
+    */
+
 }
 
 namespace
@@ -72,6 +75,7 @@ namespace
             (float)m.a4, (float)m.b4, (float)m.c4, (float)m.d4
         );
     }
+
 
     int GetOrCreateBoneIndex(Model* model, const std::string& name, const aiBone* bone)
     {
@@ -127,7 +131,25 @@ Model* FBXLoader::Load(const std::string& filePath) {
 
     // 메시들을 전부 훑은 뒤에 본 계층 + 애니메이션 처리
     BuildSkeletonHierarchy(scene, model.get());
+
+    std::vector<DirectX::XMMATRIX> globalBind(model->Bones.size());
+    for (size_t i = 0; i < model->Bones.size(); ++i) {
+        DirectX::XMMATRIX off = DirectX::XMLoadFloat4x4(&model->Bones[i].Offset);
+        globalBind[i] = DirectX::XMMatrixInverse(nullptr, off);
+    }
+    // 각 본의 로컬 바인드 행렬 계산 (자식 글로벌 * 부모 글로벌 역행렬)
+    for (size_t i = 0; i < model->Bones.size(); ++i) {
+        int parentIndex = model->Bones[i].ParentIndex;
+        DirectX::XMMATRIX g = globalBind[i];
+        DirectX::XMMATRIX localBind = (parentIndex >= 0)
+            ? DirectX::XMMatrixMultiply(g, DirectX::XMMatrixInverse(nullptr, globalBind[parentIndex]))
+            : g;
+        DirectX::XMStoreFloat4x4(&model->Bones[i].BindTransform, localBind);
+    }
+
     ProcessAnimations(scene, model.get());
+
+    // 이 함수 하나가 BindTransform(로컬 바인드)을 책임지게 둔다
     MakeBindLocalInModel(*model);
 
     // 디버그: 본 목록 출력
@@ -138,6 +160,13 @@ Model* FBXLoader::Load(const std::string& filePath) {
             model->Bones[i].ParentIndex);
     }
 
+    /*for (auto& bone : model->Bones) {
+        if (bone.ParentIndex < 0) {
+            DirectX::XMMATRIX M = DirectX::XMLoadFloat4x4(&bone.BindTransform);
+            DirectX::XMMATRIX rotY180 = DirectX::XMMatrixRotationY(DirectX::XM_PI);
+            DirectX::XMStoreFloat4x4(&bone.BindTransform, DirectX::XMMatrixMultiply(M, rotY180));
+        }
+    }*/
 
     return model.release();
 }
@@ -316,44 +345,132 @@ void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<Mo
     }
 }
 
-void FBXLoader::BuildSkeletonHierarchy(const aiScene* scene, Model* outModel)
+void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel)
 {
-    if (!scene || !scene->mRootNode || outModel->Bones.empty())
+    if (!outModel || outModel->Bones.empty())
         return;
 
-    std::function<void(aiNode*, int)> recurse =
-        [&](aiNode* node, int parentBoneIndex)
+    // 1) 일단 전부 루트(-1)로 초기화
+    for (auto& b : outModel->Bones)
+        b.ParentIndex = -1;
+
+    auto findBone = [&](const std::string& name) -> int
         {
-            std::string nodeNameRaw = node->mName.C_Str();
-            std::string nodeName = NormalizeBoneName(nodeNameRaw);
-            int currentBoneIndex = parentBoneIndex;
-
-            auto it = outModel->BoneNameToIndex.find(nodeName);
-            if (it != outModel->BoneNameToIndex.end()) {
-                currentBoneIndex = it->second;
-
-                ModelBone& bone = outModel->Bones[currentBoneIndex];
-
-                // 이미 부모가 설정되어 있으면 덮어쓰지 않는다.
-                if (bone.ParentIndex == -1) {
-                    bone.ParentIndex = parentBoneIndex;
-                }
-                else if (bone.ParentIndex != parentBoneIndex) {
-                    // 디버그용 로그 (선택)
-                    DebugPrint("[Skel] bone '%s' already has parent %d, "
-                        "ignore new parent %d (node='%s')\n",
-                        bone.Name.c_str(), bone.ParentIndex,
-                        parentBoneIndex, nodeNameRaw.c_str());
-                }
-            }
-
-            for (unsigned int i = 0; i < node->mNumChildren; ++i) {
-                recurse(node->mChildren[i], currentBoneIndex);
-            }
+            auto it = outModel->BoneNameToIndex.find(name);
+            if (it != outModel->BoneNameToIndex.end())
+                return it->second;
+            return -1;
         };
 
-    recurse(scene->mRootNode, -1);
+    for (size_t i = 0; i < outModel->Bones.size(); ++i)
+    {
+        auto& bone = outModel->Bones[i];
+        const std::string& n = bone.Name;
+        std::string parentName;
+
+        // --- 루트 / 몸통 ---
+        if (n == "hips")
+        {
+            parentName.clear();  // 최종 루트
+        }
+        else if (n == "spine")
+            parentName = "hips";
+        else if (n == "spine1")
+            parentName = "spine";
+        else if (n == "spine2")
+            parentName = "spine1";
+        else if (n == "neck")
+            parentName = "spine2";
+        else if (n == "head")
+            parentName = "neck";
+        else if (n == "headtop_end")
+            parentName = "head";
+
+        // --- 왼쪽 팔 ---
+        else if (n == "leftshoulder")
+            parentName = "spine2";
+        else if (n == "leftarm")
+            parentName = "leftshoulder";
+        else if (n == "leftforearm")
+            parentName = "leftarm";
+        else if (n == "lefthand")
+            parentName = "leftforearm";
+
+        // --- 오른쪽 팔 ---
+        else if (n == "rightshoulder")
+            parentName = "spine2";
+        else if (n == "rightarm")
+            parentName = "rightshoulder";
+        else if (n == "rightforearm")
+            parentName = "rightarm";
+        else if (n == "righthand")
+            parentName = "rightforearm";
+
+        // --- 왼쪽 다리 ---
+        else if (n == "leftupleg")
+            parentName = "hips";
+        else if (n == "leftleg")
+            parentName = "leftupleg";
+        else if (n == "leftfoot")
+            parentName = "leftleg";
+        else if (n == "lefttoebase")
+            parentName = "leftfoot";
+        else if (n == "lefttoe_end")
+            parentName = "lefttoebase";
+
+        // --- 오른쪽 다리 ---
+        else if (n == "rightupleg")
+            parentName = "hips";
+        else if (n == "rightleg")
+            parentName = "rightupleg";
+        else if (n == "rightfoot")
+            parentName = "rightleg";
+        else if (n == "righttoebase")
+            parentName = "rightfoot";
+        else if (n == "righttoe_end")
+            parentName = "righttoebase";
+
+        // --- 손가락 (공통 규칙) ---
+        else
+        {
+            // 이름이 xxx1, xxx2, xxx3, xxx4 패턴인 경우
+            if (!n.empty())
+            {
+                char last = n.back();
+                if (last >= '2' && last <= '4')
+                {
+                    // xxx2 -> xxx1, xxx3 -> xxx2, xxx4 -> xxx3
+                    std::string parentCandidate = n.substr(0, n.size() - 1);
+                    parentCandidate.push_back(static_cast<char>(last - 1));
+                    parentName = parentCandidate;
+                }
+                else if (last == '1')
+                {
+                    // *_1 의 부모는 해당 손(lefthand / righthand)
+                    if (n.rfind("lefthand", 0) == 0)
+                        parentName = "lefthand";
+                    else if (n.rfind("righthand", 0) == 0)
+                        parentName = "righthand";
+                }
+            }
+        }
+
+        if (!parentName.empty())
+        {
+            int p = findBone(parentName);
+            if (p >= 0 && p != static_cast<int>(i))
+            {
+                bone.ParentIndex = p;
+            }
+        }
+    }
+
+    // (디버그용) 한 번 더 찍어보고 hips / spine / 다리 계층이 제대로 나오는지 확인
 }
+
+
+
+
 
 
 void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
