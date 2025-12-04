@@ -25,8 +25,8 @@ public:
     // 이름으로 텍스처 가져오기
     TextureInfo* GetTexture(const std::string& name);
     
-    // 기본 텍스처 로드 (white1x1.dds)
-    bool LoadDefaultTexture(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+    // 디렉토리의 모든 DDS 파일 로드
+    bool LoadAllDDSFromDirectory(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     
     // SRV 힙 설정 (텍스처 SRV를 저장할 힙)
     void SetSRVHeap(ID3D12DescriptorHeap* srvHeap, UINT descriptorSize);

@@ -58,6 +58,7 @@ private:
     void CreateSSGIPipelineState();
     void CreateSSGIDenoisePipelineState();
     void CreateConstantBuffer();
+    void InitializeTextures();
 
 private:
     GameEngine* m_Engine = nullptr; // GameEngine 포인터 멤버

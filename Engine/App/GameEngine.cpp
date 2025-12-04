@@ -146,6 +146,7 @@ void GameEngine::CreateEntities()
     ground->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
     ground->AddComponent<MeshComponent>()->CreateCube();
     ground->AddComponent<MaterialComponent>()->SetAlbedo(0.3f, 0.8f, 0.3f);
+    ground->GetComponent<MaterialComponent>()->albedoTextureName = "bricks3";
 
     m_PhysicsWorld->RegisterEntity(ground.get());
     m_RenderSystem->RegisterEntity(ground.get());

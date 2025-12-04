@@ -47,21 +47,31 @@ void RenderSystem::Initialize() {
     CreateConstantBuffer();
     CreateShadowResources();
     
+    InitializeTextures();
+    
+    CreateGBufferPipelineState();
+    CreateShadowPipelineState();
+    CreateLightingPipelineState();
+    CreateSSGIPipelineState();
+    CreateSSGIDenoisePipelineState();
+}
+
+void RenderSystem::InitializeTextures() {
     // TextureManager 초기화
     auto textureManager = TextureManager::Get();
     textureManager->SetSRVHeap(m_RendererCore->GetGBufferSRVHeap(), m_RendererCore->GetGBufferSRVDescriptorSize());
     
-    // 기본 텍스처 로드 (white1x1.dds)
+    // 모든 DDS 텍스처 로드
     auto device = m_RendererCore->GetDevice();
     auto commandList = m_RendererCore->GetCommandList();
     
     // Command list 열기
     commandList->Reset(m_RendererCore->GetCommandAllocator(0), nullptr);
     
-    if (!textureManager->LoadDefaultTexture(device, commandList)) {
-        // 기본 텍스처 로드 실패 - 에러 출력 (디버그 빌드에서만)
+    if (!textureManager->LoadAllDDSFromDirectory(device, commandList)) {
+        // 텍스처 로드 실패 - 에러 출력 (디버그 빌드에서만)
         #ifdef _DEBUG
-        OutputDebugStringA("Warning: Failed to load default texture (white1x1.dds)\n");
+        OutputDebugStringA("Warning: Failed to load DDS textures from directory\n");
         #endif
     }
     
@@ -74,12 +84,6 @@ void RenderSystem::Initialize() {
     // GPU 동기화 (텍스처 업로드 완료 대기)
     // 텍스처 업로드가 완료될 때까지 대기하여 CommandAllocator 리셋 문제 방지
     m_RendererCore->FlushCommandQueue();
-    
-    CreateGBufferPipelineState();
-    CreateShadowPipelineState();
-    CreateLightingPipelineState();
-    CreateSSGIPipelineState();
-    CreateSSGIDenoisePipelineState();
 }
 
 void RenderSystem::CreateConstantBuffer() {
@@ -161,22 +165,23 @@ void RenderSystem::CreateConstantBuffer() {
 void RenderSystem::CreateGBufferPipelineState() {
     auto device = m_RendererCore->GetDevice();
 
-    // 텍스처 SRV 테이블 (알비도, 노말맵)
-    D3D12_DESCRIPTOR_RANGE srvTable[2] = {};
-    srvTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    srvTable[0].NumDescriptors = 1;
-    srvTable[0].BaseShaderRegister = 0; // t0
-    srvTable[0].RegisterSpace = 0;
-    srvTable[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    // 텍스처 SRV 테이블 (알비도, 노말맵) - 각각 별도의 descriptor table로 분리
+    D3D12_DESCRIPTOR_RANGE srvTableAlbedo[1] = {};
+    srvTableAlbedo[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTableAlbedo[0].NumDescriptors = 1;
+    srvTableAlbedo[0].BaseShaderRegister = 0; // t0
+    srvTableAlbedo[0].RegisterSpace = 0;
+    srvTableAlbedo[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
     
-    srvTable[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    srvTable[1].NumDescriptors = 1;
-    srvTable[1].BaseShaderRegister = 1; // t1
-    srvTable[1].RegisterSpace = 0;
-    srvTable[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    D3D12_DESCRIPTOR_RANGE srvTableNormal[1] = {};
+    srvTableNormal[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTableNormal[0].NumDescriptors = 1;
+    srvTableNormal[0].BaseShaderRegister = 1; // t1
+    srvTableNormal[0].RegisterSpace = 0;
+    srvTableNormal[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    // Root Signature (CBV b0, b1, b2, b3, SRV Table)
-    D3D12_ROOT_PARAMETER rootParameters[5] = {};
+    // Root Signature (CBV b0, b1, b2, b3, SRV Table for Albedo, SRV Table for Normal)
+    D3D12_ROOT_PARAMETER rootParameters[6] = {};
     
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
@@ -199,11 +204,17 @@ void RenderSystem::CreateGBufferPipelineState() {
     rootParameters[3].Descriptor.RegisterSpace = 0;
     rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     
-    // 텍스처 SRV 테이블
+    // 알비도 텍스처 SRV 테이블 (t0)
     rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameters[4].DescriptorTable.NumDescriptorRanges = 2;
-    rootParameters[4].DescriptorTable.pDescriptorRanges = srvTable;
+    rootParameters[4].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[4].DescriptorTable.pDescriptorRanges = srvTableAlbedo;
     rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    
+    // 노말맵 텍스처 SRV 테이블 (t1)
+    rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[5].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[5].DescriptorTable.pDescriptorRanges = srvTableNormal;
+    rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     // 샘플러 설정
     D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
@@ -1498,23 +1509,15 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
     D3D12_GPU_DESCRIPTOR_HANDLE baseHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
     UINT descriptorSize = m_RendererCore->GetGBufferSRVDescriptorSize();
     
-    // Root signature에서 t0, t1 두 개의 SRV를 연속된 범위로 정의했으므로
-    // 알비도 텍스처의 핸들을 바인딩하면 t0=알비도, t1=알비도+1이 됨
-    // 노말맵이 알비도 다음 슬롯에 있어야 하므로, 두 텍스처가 같은 경우(기본 텍스처)는 문제없음
-    // 다른 텍스처를 사용하는 경우, 노말맵이 알비도 다음 슬롯에 있어야 함
+    // 알비도 텍스처 핸들 계산 (root parameter 4)
     D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle = baseHandle;
     albedoHandle.ptr += (8 + albedoTexture->SRVIndex) * descriptorSize;
+    commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
     
-    // 알비도와 노말맵이 같은 텍스처인 경우 (기본 텍스처 사용)
-    if (albedoTexture->SRVIndex == normalTexture->SRVIndex) {
-        // 같은 텍스처를 t0, t1에 바인딩 (연속된 슬롯이므로 문제없음)
-        commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
-    } else {
-        // 다른 텍스처를 사용하는 경우, 노말맵이 알비도 다음 슬롯에 있어야 함
-        // 현재는 알비도 텍스처를 바인딩하고 노말맵이 다음 슬롯에 있다고 가정
-        // TODO: 텍스처 로딩 시 연속된 슬롯에 배치하도록 수정 필요
-        commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
-    }
+    // 노말맵 텍스처 핸들 계산 (root parameter 5)
+    D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = baseHandle;
+    normalHandle.ptr += (8 + normalTexture->SRVIndex) * descriptorSize;
+    commandList->SetGraphicsRootDescriptorTable(5, normalHandle);
 
     // 메시 렌더링
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);

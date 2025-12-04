@@ -110,22 +110,23 @@ bool TextureManager::LoadTexture(const std::string& name, const std::wstring& fi
     return true;
 }
 
-bool TextureManager::LoadDefaultTexture(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList) {
-    // white1x1.dds 로드
+bool TextureManager::LoadAllDDSFromDirectory(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList) {
     // 실행 파일 경로를 기준으로 상대 경로 계산
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
     
     // 프로젝트 루트 찾기 (Textures 폴더가 있는 디렉토리)
+    std::filesystem::path texturesDir;
     std::filesystem::path currentPath = exeDir;
-    std::vector<std::wstring> possiblePaths;
+    bool found = false;
     
     // 현재 디렉토리부터 상위로 올라가며 Textures 폴더 찾기
     for (int i = 0; i < 5; ++i) {
-        std::filesystem::path texturesPath = currentPath / "Textures" / "white1x1.dds";
-        if (std::filesystem::exists(texturesPath)) {
-            possiblePaths.push_back(texturesPath.wstring());
+        std::filesystem::path testPath = currentPath / "Textures";
+        if (std::filesystem::exists(testPath) && std::filesystem::is_directory(testPath)) {
+            texturesDir = testPath;
+            found = true;
             break;
         }
         currentPath = currentPath.parent_path();
@@ -135,29 +136,77 @@ bool TextureManager::LoadDefaultTexture(ID3D12Device* device, ID3D12GraphicsComm
     }
     
     // 찾지 못한 경우 기본 경로들 시도
-    if (possiblePaths.empty()) {
-        possiblePaths = {
-            L"Textures/white1x1.dds",           // 프로젝트 루트 기준
-            L"../Textures/white1x1.dds",        // x64/Debug에서 실행하는 경우
-            L"../../Textures/white1x1.dds",     // 다른 하위 폴더에서 실행하는 경우
+    if (!found) {
+        std::vector<std::filesystem::path> possiblePaths = {
+            std::filesystem::path("Textures"),
+            std::filesystem::path("../Textures"),
+            std::filesystem::path("../../Textures"),
         };
-    }
-    
-    for (const auto& path : possiblePaths) {
-        if (LoadTexture("white1x1", path, device, cmdList)) {
-            #ifdef _DEBUG
-            char successMsg[512];
-            sprintf_s(successMsg, "Default texture loaded from: %ws\n", path.c_str());
-            OutputDebugStringA(successMsg);
-            #endif
-            return true;
+        
+        for (const auto& path : possiblePaths) {
+            if (std::filesystem::exists(path) && std::filesystem::is_directory(path)) {
+                texturesDir = path;
+                found = true;
+                break;
+            }
         }
     }
     
+    if (!found || !std::filesystem::exists(texturesDir)) {
+        #ifdef _DEBUG
+        OutputDebugStringA("Failed to find Textures directory\n");
+        #endif
+        return false;
+    }
+    
+    // 디렉토리 내의 모든 .dds 파일 찾기
+    int loadedCount = 0;
+    int failedCount = 0;
+    
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(texturesDir)) {
+            if (entry.is_regular_file()) {
+                std::filesystem::path filePath = entry.path();
+                if (filePath.extension() == ".dds" || filePath.extension() == ".DDS") {
+                    // 파일명을 텍스처 이름으로 사용 (확장자 제외)
+                    std::string textureName = filePath.stem().string();
+                    std::wstring wFilePath = filePath.wstring();
+                    
+                    if (LoadTexture(textureName, wFilePath, device, cmdList)) {
+                        loadedCount++;
+                        #ifdef _DEBUG
+                        char successMsg[512];
+                        sprintf_s(successMsg, "Loaded texture: %s\n", textureName.c_str());
+                        OutputDebugStringA(successMsg);
+                        #endif
+                    } else {
+                        failedCount++;
+                        #ifdef _DEBUG
+                        char errorMsg[512];
+                        sprintf_s(errorMsg, "Failed to load texture: %s\n", textureName.c_str());
+                        OutputDebugStringA(errorMsg);
+                        #endif
+                    }
+                }
+            }
+        }
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+        #ifdef _DEBUG
+        char errorMsg[512];
+        sprintf_s(errorMsg, "Filesystem error while loading textures: %s\n", e.what());
+        OutputDebugStringA(errorMsg);
+        #endif
+        return false;
+    }
+    
     #ifdef _DEBUG
-    OutputDebugStringA("Failed to load default texture from all possible paths\n");
+    char summaryMsg[512];
+    sprintf_s(summaryMsg, "Texture loading complete: %d loaded, %d failed\n", loadedCount, failedCount);
+    OutputDebugStringA(summaryMsg);
     #endif
-    return false;
+    
+    return loadedCount > 0; // 최소 하나라도 로드되면 성공
 }
 
 TextureInfo* TextureManager::GetTexture(const std::string& name) {
