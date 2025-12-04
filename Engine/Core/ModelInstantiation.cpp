@@ -94,7 +94,7 @@ namespace ModelInstantiation {
                     meshCompVertex.normal = modelVertex.Normal;
                     meshCompVertex.texCoord = modelVertex.TexC;
 
-                    // --- 추가: 본 인덱스 / 가중치 복사 ---
+                    // 본 인덱스 / 가중치 복사 ---
                     for (int i = 0; i < 4; ++i) {
                         meshCompVertex.boneIndices[i] = modelVertex.BoneIndices[i];
                         meshCompVertex.boneWeights[i] = modelVertex.BoneWeights[i];

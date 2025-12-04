@@ -17,6 +17,18 @@
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
+inline void DebugPrint(const char* fmt, ...)
+{
+    char buffer[1024];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf_s(buffer, sizeof(buffer), _TRUNCATE, fmt, args);
+    va_end(args);
+
+    OutputDebugStringA(buffer);
+}
+
 static void MakeBindLocalInModel(Model& model)
 {
     using namespace DirectX;
@@ -117,6 +129,15 @@ Model* FBXLoader::Load(const std::string& filePath) {
     BuildSkeletonHierarchy(scene, model.get());
     ProcessAnimations(scene, model.get());
     MakeBindLocalInModel(*model);
+
+    // 디버그: 본 목록 출력
+    for (size_t i = 0; i < model->Bones.size(); ++i) {
+        DebugPrint("[Bones] %zu : name='%s', parent=%d\n",
+            i,
+            model->Bones[i].Name.c_str(),
+            model->Bones[i].ParentIndex);
+    }
+
 
     return model.release();
 }
@@ -230,7 +251,6 @@ void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<Mo
     if (!mesh->HasBones())
         return;
 
-    // 초기화 (혹시 모를 쓰레기값 방지)
     for (auto& v : vertices) {
         for (int i = 0; i < 4; ++i) {
             v.BoneIndices[i] = 0;
@@ -311,7 +331,20 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* scene, Model* outModel)
             auto it = outModel->BoneNameToIndex.find(nodeName);
             if (it != outModel->BoneNameToIndex.end()) {
                 currentBoneIndex = it->second;
-                outModel->Bones[currentBoneIndex].ParentIndex = parentBoneIndex;
+
+                ModelBone& bone = outModel->Bones[currentBoneIndex];
+
+                // 이미 부모가 설정되어 있으면 덮어쓰지 않는다.
+                if (bone.ParentIndex == -1) {
+                    bone.ParentIndex = parentBoneIndex;
+                }
+                else if (bone.ParentIndex != parentBoneIndex) {
+                    // 디버그용 로그 (선택)
+                    DebugPrint("[Skel] bone '%s' already has parent %d, "
+                        "ignore new parent %d (node='%s')\n",
+                        bone.Name.c_str(), bone.ParentIndex,
+                        parentBoneIndex, nodeNameRaw.c_str());
+                }
             }
 
             for (unsigned int i = 0; i < node->mNumChildren; ++i) {
@@ -353,8 +386,14 @@ void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
             int boneIndex = outModel->GetBoneIndex(channelName);
             if (boneIndex < 0) {
                 // 디버깅용으로 보고 싶으면 여기서 OutputDebugString 써도 됨
+                DebugPrint("[Anim] channel '%s' (norm='%s') -> bone NOT FOUND\n",
+                    channelNameRaw.c_str(), channelName.c_str());
                 continue;
             }
+
+            DebugPrint("[Anim] channel '%s' (norm='%s') -> boneIdx=%d, boneName='%s'\n",
+                channelNameRaw.c_str(), channelName.c_str(),
+                boneIndex, outModel->Bones[boneIndex].Name.c_str());
 
             ModelBoneAnimation& boneAnim = clip.BoneAnimations[boneIndex];
 
@@ -398,13 +437,15 @@ void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
 
         outModel->Animations.push_back(std::move(clip));
 
+        DebugPrint("=== Clip '%s' summary ===\n", clip.Name.c_str());
         for (size_t i = 0; i < clip.BoneAnimations.size(); ++i) {
             const auto& b = clip.BoneAnimations[i];
             if (!b.Translations.empty() || !b.Rotations.empty() || !b.Scales.empty()) {
-                std::cout << "[Anim] bone " << outModel->Bones[i].Name
-                    << " keys T:" << b.Translations.size()
-                    << " R:" << b.Rotations.size()
-                    << " S:" << b.Scales.size() << "\n";
+                DebugPrint("[Anim] boneIdx=%zu name='%s' keys T:%zu R:%zu S:%zu\n",
+                    i, outModel->Bones[i].Name.c_str(),
+                    b.Translations.size(),
+                    b.Rotations.size(),
+                    b.Scales.size());
             }
         }
     }

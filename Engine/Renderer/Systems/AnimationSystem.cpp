@@ -72,10 +72,41 @@ static XMFLOAT4 SampleQuat(const std::vector<ModelKeyframeQuat>& keys,
     return keys.back().Value;
 }
 
-static void EvaluateBoneLocal(const ModelBoneAnimation& anim,
-    double time, XMFLOAT4X4& out)
+static void DecomposeSRT(const XMFLOAT4X4& m,
+    XMFLOAT3& outS, XMFLOAT4& outR, XMFLOAT3& outT)
 {
-    XMFLOAT3 T = SampleVector3(anim.Translations, time, XMFLOAT3(0, 0, 0));
+    XMMATRIX M = XMLoadFloat4x4(&m);
+
+    XMVECTOR s, r, t;
+    XMMatrixDecompose(&s, &r, &t, M);
+
+    XMStoreFloat3(&outS, s);
+    XMStoreFloat4(&outR, r);
+    XMStoreFloat3(&outT, t);
+}
+
+static XMFLOAT3 ExtractBindTranslation(const XMFLOAT4X4& m)
+{
+    XMMATRIX M = XMLoadFloat4x4(&m);
+
+    XMVECTOR s, r, t;
+    XMMatrixDecompose(&s, &r, &t, M);
+
+    XMFLOAT3 outT;
+    XMStoreFloat3(&outT, t);
+    return outT;
+}
+
+static void EvaluateBoneLocal(const ModelBoneAnimation& anim,
+    const ModelBone& bindBone,
+    double time,
+    XMFLOAT4X4& out)
+{
+    // 바인드 포즈에서 위치만 가져온다
+    XMFLOAT3 bindT = ExtractBindTranslation(bindBone.BindTransform);
+
+    // T: 없으면 바인드 위치, S: 없으면 1, R: 없으면 단위
+    XMFLOAT3 T = SampleVector3(anim.Translations, time, bindT);
     XMFLOAT3 S = SampleVector3(anim.Scales, time, XMFLOAT3(1, 1, 1));
     XMFLOAT4 R = SampleQuat(anim.Rotations, time, XMFLOAT4(0, 0, 0, 1));
 
@@ -86,6 +117,7 @@ static void EvaluateBoneLocal(const ModelBoneAnimation& anim,
     XMMATRIX M = mS * mR * mT;
     XMStoreFloat4x4(&out, M);
 }
+
 
 static const ModelAnimationClip* FindClip(const SkeletonComponent* skel,
     const std::string& name)
@@ -160,18 +192,23 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
 
     // 로컬 행렬 계산
     for (size_t i = 0; i < boneCount; ++i) {
+        const ModelBone& bindBone = skeleton->Bones[i];
+
         if (i < clip->BoneAnimations.size()) {
             const ModelBoneAnimation& boneAnim = clip->BoneAnimations[i];
+
             if (!boneAnim.Translations.empty() ||
                 !boneAnim.Rotations.empty() ||
                 !boneAnim.Scales.empty())
             {
-                EvaluateBoneLocal(boneAnim, animTime, localTransforms[i]);
+                // 바인드 위치를 기본으로 애니메이션을 덮어쓴다
+                EvaluateBoneLocal(boneAnim, bindBone, animTime, localTransforms[i]);
                 continue;
             }
         }
-        // XMStoreFloat4x4(&localTransforms[i], XMMatrixIdentity());
-        localTransforms[i] = skeleton->Bones[i].BindTransform;
+
+        // 애니 키가 전혀 없는 본은 바인드 포즈 그대로
+        localTransforms[i] = bindBone.BindTransform;
     }
 
     // 계층 구조를 따라 월드 행렬 계산
@@ -200,7 +237,7 @@ void AnimationSystem::UpdateSkeletalAnimation(Entity* entity, float deltaTime)
         computeWorld(i);
     }
 
-    // 최종 스키닝 행렬 = Global * Offset (또는 Offset * Global, 나중에 필요하면 바꿔봄)
+    // 최종 스키닝 행렬 = offset * global
     skeleton->FinalBoneTransforms.resize(boneCount);
     for (size_t i = 0; i < boneCount; ++i) {
         XMMATRIX global = XMLoadFloat4x4(&globalTransforms[i]);

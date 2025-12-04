@@ -15,21 +15,33 @@ inline std::string NormalizeBoneName(const std::string& name)
 {
     std::string r = name;
 
-    // 1) 마지막 ':' 또는 '|' 뒤만 사용 (FBX에서 자주 나오는 패턴)
-    size_t pos = r.find_last_of(":|");
-    if (pos != std::string::npos) {
+    // 1) '|' 뒤 자르기 (Armature|mixamorig:LeftArm)
+    size_t pos = r.find_last_of('|');
+    if (pos != std::string::npos && pos + 1 < r.size())
         r = r.substr(pos + 1);
+
+    // 2) ':' 뒤 자르기 (mixamorig:LeftArm)
+    pos = r.find_last_of(':');
+    if (pos != std::string::npos && pos + 1 < r.size())
+        r = r.substr(pos + 1);
+
+    // 3) Assimp FBX가 붙이는 보조 노드 접미사 제거
+    //    예: "LeftArm_$AssimpFbx$_Rotation" -> "LeftArm"
+    const std::string assimpSuffixMarker = "_$AssimpFbx$_";
+    pos = r.find(assimpSuffixMarker);
+    if (pos != std::string::npos) {
+        r = r.substr(0, pos);
     }
 
-    // 2) 양쪽 공백 제거
+    // 4) 양쪽 공백 제거 (있을 수도 있으니)
     while (!r.empty() && (r.front() == ' ' || r.front() == '\t'))
         r.erase(r.begin());
     while (!r.empty() && (r.back() == ' ' || r.back() == '\t'))
         r.pop_back();
 
-    // 3) 소문자로 통일
+    // 5) 전부 소문자로
     for (auto& ch : r) {
-        ch = (char)std::tolower((unsigned char)ch);
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
     }
 
     return r;
@@ -79,7 +91,7 @@ struct ModelBone {
     std::string Name;
     int ParentIndex = -1;             // -1이면 루트
     DirectX::XMFLOAT4X4 Offset;       // inverse bind pose (aiBone::mOffsetMatrix)
-    DirectX::XMFLOAT4X4 BindTransform; // 원래 바인드 포즈
+    DirectX::XMFLOAT4X4 BindTransform; //바인드 포즈
 };
 
 struct ModelKeyframeVec3 {
