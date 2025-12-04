@@ -103,6 +103,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)Libraries\assimp\include\contrib\zlib;$(ProjectDir)Renderer;$(ProjectDir)Physics;$(ProjectDir);$(SolutionDir)Libraries\assimp\include\build;$(SolutionDir)Libraries\assimp\include;$(SolutionDir)Libraries\assimp\lib\$(Configuration);$(ProjectDir)Core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -145,6 +146,7 @@
     <ClInclude Include="Core\ISystem.h" />
     <ClInclude Include="Core\ModelInstantiation.h" />
     <ClInclude Include="Core\ResourceManager.h" />
+    <ClInclude Include="Core\TextureManager.h" />
     <ClInclude Include="Core\InputManager.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
     <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
@@ -181,6 +183,7 @@
     <ClCompile Include="App\MainApp.cpp" />
     <ClCompile Include="Core\FBXLoader.cpp" />
     <ClCompile Include="Core\ModelInstantiation.cpp" />
+    <ClCompile Include="Core\TextureManager.cpp" />
     <ClCompile Include="Core\InputManager.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
     <ClCompile Include="Physics\PhysicsWorld.cpp" />

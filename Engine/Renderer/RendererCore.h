@@ -19,9 +19,14 @@ public:
     void BeginFrame();
     void EndFrame();
     void Present();
+    
+    // GPU 동기화 - 모든 명령 실행 완료 대기
+    void FlushCommandQueue();
 
     ID3D12Device* GetDevice() const { return m_Device.Get(); }
     ID3D12GraphicsCommandList* GetCommandList() const { return m_CommandList.Get(); }
+    ID3D12CommandQueue* GetCommandQueue() const { return m_CommandQueue.Get(); }
+    ID3D12CommandAllocator* GetCommandAllocator(UINT index) const { return m_CommandAllocators[index].Get(); }
 
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }

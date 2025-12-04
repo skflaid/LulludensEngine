@@ -51,6 +51,11 @@ cbuffer cbSkinning : register(b3)
     float4x4 gBoneTransforms[128];
 };
 
+// 텍스처
+Texture2D gAlbedoMap : register(t0);
+Texture2D gNormalMap : register(t1);
+SamplerState gsamLinearWrap : register(s0);
+
 struct VertexIn
 {
     float3 PosL : POSITION;
@@ -145,11 +150,29 @@ GBufferOut PS(VertexOut pin)
     // Position (World space)
     gbuffer.Position = float4(pin.PosW, 1.0f);
 
-    // Normal
-    gbuffer.Normal = float4(pin.NormalW * 0.5f + 0.5f, 1.0f);
+    // 텍스처에서 알비도 샘플링
+    float4 albedoMap = gAlbedoMap.Sample(gsamLinearWrap, pin.TexC);
+    float4 finalAlbedo = gDiffuseAlbedo * albedoMap;
 
-    // Albedo
-    gbuffer.Albedo = gDiffuseAlbedo;
+    // 텍스처에서 노말맵 샘플링 및 적용
+    float3 normalMap = gNormalMap.Sample(gsamLinearWrap, pin.TexC).rgb;
+    // 노말맵을 -1~1 범위로 변환 (0~1 -> -1~1)
+    normalMap = normalMap * 2.0f - 1.0f;
+    
+    // 노말맵을 정규화
+    normalMap = normalize(normalMap);
+    
+    // 탄젠트 공간 노말을 월드 공간으로 변환
+    // 실제로는 탄젠트/바이노말이 필요하지만, 일단 기하 노말과 노말맵을 결합
+    // 간단한 버전: 노말맵을 기하 노말에 약간 반영
+    float3 worldNormal = pin.NormalW;
+    worldNormal = normalize(worldNormal + normalMap * 0.2f);
+    
+    // Normal
+    gbuffer.Normal = float4(worldNormal * 0.5f + 0.5f, 1.0f);
+
+    // Albedo (텍스처 적용)
+    gbuffer.Albedo = finalAlbedo;
 
     // Material properties
     gbuffer.Material = float4(gRoughness, 0.0f, gFresnelR0.x, 1.0f);

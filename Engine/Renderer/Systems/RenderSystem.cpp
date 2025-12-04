@@ -7,6 +7,7 @@
 #include "Renderer/Components/CameraComponent.h"
 #include <d3dcompiler.h>
 #include "Renderer/Components/SkeletonComponent.h"
+#include "Core/TextureManager.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -45,6 +46,35 @@ void RenderSystem::Initialize() {
 
     CreateConstantBuffer();
     CreateShadowResources();
+    
+    // TextureManager 초기화
+    auto textureManager = TextureManager::Get();
+    textureManager->SetSRVHeap(m_RendererCore->GetGBufferSRVHeap(), m_RendererCore->GetGBufferSRVDescriptorSize());
+    
+    // 기본 텍스처 로드 (white1x1.dds)
+    auto device = m_RendererCore->GetDevice();
+    auto commandList = m_RendererCore->GetCommandList();
+    
+    // Command list 열기
+    commandList->Reset(m_RendererCore->GetCommandAllocator(0), nullptr);
+    
+    if (!textureManager->LoadDefaultTexture(device, commandList)) {
+        // 기본 텍스처 로드 실패 - 에러 출력 (디버그 빌드에서만)
+        #ifdef _DEBUG
+        OutputDebugStringA("Warning: Failed to load default texture (white1x1.dds)\n");
+        #endif
+    }
+    
+    // Command list 실행 및 대기
+    commandList->Close();
+    ID3D12CommandQueue* commandQueue = m_RendererCore->GetCommandQueue();
+    ID3D12CommandList* cmdLists[] = { commandList };
+    commandQueue->ExecuteCommandLists(1, cmdLists);
+    
+    // GPU 동기화 (텍스처 업로드 완료 대기)
+    // 텍스처 업로드가 완료될 때까지 대기하여 CommandAllocator 리셋 문제 방지
+    m_RendererCore->FlushCommandQueue();
+    
     CreateGBufferPipelineState();
     CreateShadowPipelineState();
     CreateLightingPipelineState();
@@ -131,8 +161,22 @@ void RenderSystem::CreateConstantBuffer() {
 void RenderSystem::CreateGBufferPipelineState() {
     auto device = m_RendererCore->GetDevice();
 
-    // Root Signature (CBV b0, b1, b2, b3)
-    D3D12_ROOT_PARAMETER rootParameters[4] = {};
+    // 텍스처 SRV 테이블 (알비도, 노말맵)
+    D3D12_DESCRIPTOR_RANGE srvTable[2] = {};
+    srvTable[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable[0].NumDescriptors = 1;
+    srvTable[0].BaseShaderRegister = 0; // t0
+    srvTable[0].RegisterSpace = 0;
+    srvTable[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    
+    srvTable[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable[1].NumDescriptors = 1;
+    srvTable[1].BaseShaderRegister = 1; // t1
+    srvTable[1].RegisterSpace = 0;
+    srvTable[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    // Root Signature (CBV b0, b1, b2, b3, SRV Table)
+    D3D12_ROOT_PARAMETER rootParameters[5] = {};
     
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
@@ -154,12 +198,34 @@ void RenderSystem::CreateGBufferPipelineState() {
     rootParameters[3].Descriptor.ShaderRegister = 3; // b3
     rootParameters[3].Descriptor.RegisterSpace = 0;
     rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-    // (스키닝은 VS에서만 쓰니까 VERTEX로 좁혀도 되고, ALL로 둬도 됨)
+    
+    // 텍스처 SRV 테이블
+    rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[4].DescriptorTable.NumDescriptorRanges = 2;
+    rootParameters[4].DescriptorTable.pDescriptorRanges = srvTable;
+    rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
+    // 샘플러 설정
+    D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplerDesc.MipLODBias = 0;
+    samplerDesc.MaxAnisotropy = 0;
+    samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+    samplerDesc.MinLOD = 0.0f;
+    samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+    samplerDesc.ShaderRegister = 0; // s0
+    samplerDesc.RegisterSpace = 0;
+    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
     rootDesc.NumParameters = _countof(rootParameters);
     rootDesc.pParameters = rootParameters;
+    rootDesc.NumStaticSamplers = 1;
+    rootDesc.pStaticSamplers = &samplerDesc;
     rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ComPtr<ID3DBlob> sig, err;
@@ -913,28 +979,30 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     commandList->RSSetScissorRects(1, &mainScissor);
 
     // Transition G-Buffer to render target state
+    // barrier 배열을 항상 초기화 (나중에 다시 사용하기 위해)
     D3D12_RESOURCE_BARRIER barriers[4] = {};
     barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
-    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-
     barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[1].Transition.pResource = m_RendererCore->GetGBufferNormal();
-    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-
     barriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[2].Transition.pResource = m_RendererCore->GetGBufferAlbedo();
-    barriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-
     barriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[3].Transition.pResource = m_RendererCore->GetGBufferMaterial();
-    barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-
-    commandList->ResourceBarrier(4, barriers);
+    
+    // 첫 프레임에서는 G-Buffer가 이미 RENDER_TARGET 상태로 시작
+    if (!m_IsFirstGBufferFrame) {
+        barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        barriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        commandList->ResourceBarrier(4, barriers);
+    }
+    m_IsFirstGBufferFrame = false;
 
     // Set G-Buffer render targets
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs[4] = {
@@ -970,14 +1038,27 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     }
 
     // Transition G-Buffer to pixel shader resource state
+    // barrier 배열 재초기화 (안전하게)
+    barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
     barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    
+    barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[1].Transition.pResource = m_RendererCore->GetGBufferNormal();
     barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    
+    barriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[2].Transition.pResource = m_RendererCore->GetGBufferAlbedo();
     barriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    
+    barriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[3].Transition.pResource = m_RendererCore->GetGBufferMaterial();
     barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    
     commandList->ResourceBarrier(4, barriers);
 }
 
@@ -1383,6 +1464,57 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
     D3D12_GPU_VIRTUAL_ADDRESS skinCBAddress =
         m_SkinningConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetGraphicsRootConstantBufferView(3, skinCBAddress);
+
+    // 텍스처 바인딩 (root parameter 4)
+    auto textureManager = TextureManager::Get();
+    
+    // 알비도 텍스처 가져오기 (없으면 기본 텍스처 사용)
+    TextureInfo* albedoTexture = textureManager->GetTexture(material->albedoTextureName);
+    if (!albedoTexture || !albedoTexture->IsValid) {
+        albedoTexture = textureManager->GetTexture("white1x1");
+    }
+    
+    // 노말맵 텍스처 가져오기 (없으면 기본 텍스처 사용)
+    TextureInfo* normalTexture = textureManager->GetTexture(material->normalTextureName);
+    if (!normalTexture || !normalTexture->IsValid) {
+        normalTexture = textureManager->GetTexture("white1x1");
+    }
+    
+    // 기본 텍스처가 없으면 에러 (셰이더에서 텍스처를 샘플링하므로 필수)
+    if (!albedoTexture || !normalTexture || !albedoTexture->IsValid || !normalTexture->IsValid) {
+        #ifdef _DEBUG
+        OutputDebugStringA("Error: Default texture (white1x1) not loaded! Texture binding failed.\n");
+        #endif
+        // 텍스처 없이 렌더링하면 크래시가 발생할 수 있으므로 리턴
+        return;
+    }
+    
+    // SRV 힙 설정 (이미 설정되어 있을 수 있지만 안전하게)
+    ID3D12DescriptorHeap* srvHeaps[] = { m_RendererCore->GetGBufferSRVHeap() };
+    commandList->SetDescriptorHeaps(1, srvHeaps);
+    
+    // 텍스처 SRV 바인딩
+    // GBuffer SRV 힙의 시작은 인덱스 8부터 (0-7은 G-Buffer, SSGI, Shadow용)
+    D3D12_GPU_DESCRIPTOR_HANDLE baseHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
+    UINT descriptorSize = m_RendererCore->GetGBufferSRVDescriptorSize();
+    
+    // Root signature에서 t0, t1 두 개의 SRV를 연속된 범위로 정의했으므로
+    // 알비도 텍스처의 핸들을 바인딩하면 t0=알비도, t1=알비도+1이 됨
+    // 노말맵이 알비도 다음 슬롯에 있어야 하므로, 두 텍스처가 같은 경우(기본 텍스처)는 문제없음
+    // 다른 텍스처를 사용하는 경우, 노말맵이 알비도 다음 슬롯에 있어야 함
+    D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle = baseHandle;
+    albedoHandle.ptr += (8 + albedoTexture->SRVIndex) * descriptorSize;
+    
+    // 알비도와 노말맵이 같은 텍스처인 경우 (기본 텍스처 사용)
+    if (albedoTexture->SRVIndex == normalTexture->SRVIndex) {
+        // 같은 텍스처를 t0, t1에 바인딩 (연속된 슬롯이므로 문제없음)
+        commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
+    } else {
+        // 다른 텍스처를 사용하는 경우, 노말맵이 알비도 다음 슬롯에 있어야 함
+        // 현재는 알비도 텍스처를 바인딩하고 노말맵이 다음 슬롯에 있다고 가정
+        // TODO: 텍스처 로딩 시 연속된 슬롯에 배치하도록 수정 필요
+        commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
+    }
 
     // 메시 렌더링
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);

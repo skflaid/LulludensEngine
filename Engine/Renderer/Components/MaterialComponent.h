@@ -13,6 +13,10 @@ struct MaterialComponent : public IComponent {
     float roughness = 0.5f;
 
     std::string shaderPath;
+    
+    // 텍스처 이름 (기본값: white1x1)
+    std::string albedoTextureName = "white1x1";
+    std::string normalTextureName = "white1x1";
 
     void SetAlbedo(float r, float g, float b, float a = 1.0f) {
         albedo = { r, g, b, a };
@@ -20,5 +24,13 @@ struct MaterialComponent : public IComponent {
 
     void SetShader(const std::string& path) {
         shaderPath = path;
+    }
+    
+    void SetAlbedoTexture(const std::string& name) {
+        albedoTextureName = name;
+    }
+    
+    void SetNormalTexture(const std::string& name) {
+        normalTextureName = name;
     }
 };

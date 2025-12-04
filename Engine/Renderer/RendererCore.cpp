@@ -195,8 +195,9 @@ void RendererCore::CreateGBuffer() {
  // 5: Shadow   SRV
  // 6: SSGI     UAV
  // 7: SSGI Previous SRV (이전 프레임)
+ // 8+: 텍스처 SRV들 (알비도, 노말맵 등)
     D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-    srvHeapDesc.NumDescriptors = 8; // 7 → 8 로 변경 (이전 프레임 SSGI 추가)
+    srvHeapDesc.NumDescriptors = 8 + 256; // 텍스처를 위한 공간 추가 (최대 256개)
     srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     m_Device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_GBufferSRVHeap));
@@ -468,6 +469,24 @@ void RendererCore::WaitForGPU() {
     m_CommandQueue->Signal(m_Fence.Get(), m_FenceValues[m_FrameIndex]);
     m_Fence->SetEventOnCompletion(m_FenceValues[m_FrameIndex], m_FenceEvent);
     WaitForSingleObject(m_FenceEvent, INFINITE);
+}
+
+void RendererCore::FlushCommandQueue() {
+    // 현재 프레임의 fence 값을 증가시켜 명령 큐에 Signal 추가
+    const uint64_t currentFenceValue = m_FenceValues[m_FrameIndex];
+    const uint64_t newFenceValue = currentFenceValue + 1;
+    
+    // 명령 큐에 Signal 추가 (GPU가 이전 모든 명령을 완료할 때까지 대기)
+    m_CommandQueue->Signal(m_Fence.Get(), newFenceValue);
+    
+    // GPU가 모든 명령을 완료할 때까지 대기
+    if (m_Fence->GetCompletedValue() < newFenceValue) {
+        m_Fence->SetEventOnCompletion(newFenceValue, m_FenceEvent);
+        WaitForSingleObject(m_FenceEvent, INFINITE);
+    }
+    
+    // Fence 값 업데이트
+    m_FenceValues[m_FrameIndex] = newFenceValue;
 }
 
 void RendererCore::MoveToNextFrame() {
