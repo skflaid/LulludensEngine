@@ -1,5 +1,6 @@
 // MeshComponent.cpp
 #include "MeshComponent.h"
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -13,7 +14,7 @@ void MeshComponent::LoadFromFile(const std::string& filepath) {
     std::string line;
     size_t vertexCount = 0, triCount = 0;
 
-    // 1) VertexCount, TriangleCount ÀĞ±â
+    // 1) VertexCount, TriangleCount ì½ê¸°
     std::getline(file, line);
     {
         std::istringstream iss(line);
@@ -27,12 +28,12 @@ void MeshComponent::LoadFromFile(const std::string& filepath) {
         iss >> label >> triCount;
     }
 
-    // 2) VertexList ºí·Ï °Ç³Ê¶Ù±â (Çì´õ, Áß°ıÈ£)
+    // 2) VertexList ë¸”ë¡ ê±´ë„ˆë›°ê¸° (í—¤ë”, ì¤‘ê´„í˜¸)
     std::getline(file, line); // VertexList(...)
     std::getline(file, line); // {
 
     vertices.resize(vertexCount);
-    // 3) ¹öÅØ½º ÀĞ±â
+    // 3) ë²„í…ìŠ¤ ì½ê¸°
     for (size_t i = 0; i < vertexCount; ++i) {
         std::getline(file, line);
         std::istringstream iss(line);
@@ -42,16 +43,16 @@ void MeshComponent::LoadFromFile(const std::string& filepath) {
             >> vertices[i].normal.x
             >> vertices[i].normal.y
             >> vertices[i].normal.z;
-        vertices[i].texCoord = { 0,0 }; // ÇÊ¿ä½Ã ÅØ½ºÃ³ ÁÂÇ¥ Ã³¸®
+        vertices[i].texCoord = { 0,0 }; // í•„ìš”ì‹œ í…ìŠ¤ì²˜ ì¢Œí‘œ ì²˜ë¦¬
     }
 
-    // 4) ºí·Ï ´İ°í IndexList ºí·Ï ÁøÀÔ
+    // 4) ë¸”ë¡ ë‹«ê³  IndexList ë¸”ë¡ ì§„ì…
     std::getline(file, line); // }
     std::getline(file, line); // IndexList
     std::getline(file, line); // {
 
     indices.resize(triCount * 3);
-    // 5) ÀÎµ¦½º ÀĞ±â
+    // 5) ì¸ë±ìŠ¤ ì½ê¸°
     for (size_t i = 0; i < triCount; ++i) {
         uint32_t i0, i1, i2;
         file >> i0 >> i1 >> i2;
@@ -61,5 +62,49 @@ void MeshComponent::LoadFromFile(const std::string& filepath) {
     }
 
     file.close();
+    submeshes.clear();
+    submeshes.push_back({ "Mesh", 0u, static_cast<uint32_t>(indices.size()), "", "" });
     isLoaded = true;
+}
+
+bool MeshComponent::SetTextureForMesh(const std::string& meshName, const std::string& albedoTextureName, const std::string& normalTextureName) {
+    auto it = std::find_if(submeshes.begin(), submeshes.end(),
+        [&meshName](const SubmeshTextureBinding& submesh) {
+            return submesh.meshName == meshName;
+        });
+
+    if (it == submeshes.end()) {
+        return false;
+    }
+
+    if (!albedoTextureName.empty()) {
+        it->albedoTextureName = albedoTextureName;
+    }
+
+    if (!normalTextureName.empty()) {
+        it->normalTextureName = normalTextureName;
+    }
+
+    return true;
+}
+
+void MeshComponent::SetTextureForAllMeshes(const std::string& albedoTextureName, const std::string& normalTextureName) {
+    for (auto& submesh : submeshes) {
+        if (!albedoTextureName.empty()) {
+            submesh.albedoTextureName = albedoTextureName;
+        }
+
+        if (!normalTextureName.empty()) {
+            submesh.normalTextureName = normalTextureName;
+        }
+    }
+}
+
+const SubmeshTextureBinding* MeshComponent::FindSubmesh(const std::string& meshName) const {
+    auto it = std::find_if(submeshes.begin(), submeshes.end(),
+        [&meshName](const SubmeshTextureBinding& submesh) {
+            return submesh.meshName == meshName;
+        });
+
+    return (it != submeshes.end()) ? &(*it) : nullptr;
 }

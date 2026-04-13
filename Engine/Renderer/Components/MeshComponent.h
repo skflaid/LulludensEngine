@@ -12,16 +12,25 @@ struct Vertex {
     XMFLOAT3 normal;
     XMFLOAT2 texCoord;
 
-    // 스켈레탈용 (지금은 안 써도 괜찮고, 나중에 VS에서 사용할 예정)
+    // 스키닝용 정보 (지금은 최대 4개 bone 영향만 저장)
     uint32_t boneIndices[4] = { 0, 0, 0, 0 };
     float    boneWeights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+};
+
+struct SubmeshTextureBinding {
+    std::string meshName;
+    uint32_t startIndex = 0;
+    uint32_t indexCount = 0;
+    std::string albedoTextureName;
+    std::string normalTextureName;
 };
 
 struct MeshComponent : public IComponent {
     COMPONENT_TYPE(MeshComponent)
 
-        std::vector<Vertex> vertices;
+    std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    std::vector<SubmeshTextureBinding> submeshes;
 
     // DirectX 12 resources
     ID3D12Resource* vertexBuffer = nullptr;
@@ -32,6 +41,9 @@ struct MeshComponent : public IComponent {
     bool isLoaded = false;
 
     void LoadFromFile(const std::string& filepath);
+    bool SetTextureForMesh(const std::string& meshName, const std::string& albedoTextureName, const std::string& normalTextureName = "");
+    void SetTextureForAllMeshes(const std::string& albedoTextureName, const std::string& normalTextureName = "");
+    const SubmeshTextureBinding* FindSubmesh(const std::string& meshName) const;
 
     void CreateCube() {
         // Cube mesh with 24 vertices (4 per face) for proper normals
@@ -88,6 +100,8 @@ struct MeshComponent : public IComponent {
             20, 21, 22, 20, 22, 23
         };
 
+        submeshes.clear();
+        submeshes.push_back({ "Cube", 0u, static_cast<uint32_t>(indices.size()), "", "" });
         isLoaded = true;
     }
 

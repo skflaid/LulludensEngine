@@ -1,4 +1,5 @@
 #include "App/GameEngine.h"
+#include "Inference/DirectMLStyleTransferSystem.h"
 #include "RenderSystem.h"
 #include "../Components/TransformComponent.h"
 #include "../Components/MeshComponent.h"
@@ -32,14 +33,14 @@ void RenderSystem::Initialize() {
     }
 
     /*
-    // 카메라(뷰) 행렬 설정
-    XMVECTOR eye = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);  // 카메라 위치
-    XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);    // 바라보는 지점
-    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // 상향 벡터
+    // 移대찓??酉? ?됰젹 ?ㅼ젙
+    XMVECTOR eye = XMVectorSet(0.0f, 3.0f, -8.0f, 0.0f);  // 移대찓???꾩튂
+    XMVECTOR at = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);    // 諛붾씪蹂대뒗 吏??
+    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // ?곹뼢 踰≫꽣
     XMStoreFloat4x4(&m_ViewMatrix, XMMatrixLookAtLH(eye, at, up));
 
-    // 원근 투영 행렬 설정
-    float fov = XM_PIDIV4; // 45도
+    // ?먭렐 ?ъ쁺 ?됰젹 ?ㅼ젙
+    float fov = XM_PIDIV4; // 45??
     float aspectRatio = static_cast<float>(m_Width) / static_cast<float>(m_Height);
     XMStoreFloat4x4(&m_ProjMatrix, XMMatrixPerspectiveFovLH(fov, aspectRatio, 0.1f, 100.0f));
     */
@@ -48,6 +49,13 @@ void RenderSystem::Initialize() {
     CreateShadowResources();
     
     InitializeTextures();
+
+    DirectMLStyleTransferSystem::Config styleConfig = {};
+    styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\reconet_style.onnx";
+    styleConfig.inputWidth = m_Width;
+    styleConfig.inputHeight = m_Height;
+    m_DirectMLStyleTransferSystem = std::make_unique<DirectMLStyleTransferSystem>(m_RendererCore.get(), styleConfig);
+    m_DirectMLStyleTransferSystem->Initialize();
     
     CreateGBufferPipelineState();
     CreateShadowPipelineState();
@@ -57,39 +65,39 @@ void RenderSystem::Initialize() {
 }
 
 void RenderSystem::InitializeTextures() {
-    // TextureManager 초기화
+    // TextureManager 珥덇린??
     auto textureManager = TextureManager::Get();
     textureManager->SetSRVHeap(m_RendererCore->GetGBufferSRVHeap(), m_RendererCore->GetGBufferSRVDescriptorSize());
     
-    // 모든 DDS 텍스처 로드
+    // 紐⑤뱺 DDS ?띿뒪泥?濡쒕뱶
     auto device = m_RendererCore->GetDevice();
     auto commandList = m_RendererCore->GetCommandList();
     
-    // Command list 열기
+    // Command list ?닿린
     commandList->Reset(m_RendererCore->GetCommandAllocator(0), nullptr);
     
     if (!textureManager->LoadAllDDSFromDirectory(device, commandList)) {
-        // 텍스처 로드 실패 - 에러 출력 (디버그 빌드에서만)
+        // ?띿뒪泥?濡쒕뱶 ?ㅽ뙣 - ?먮윭 異쒕젰 (?붾쾭洹?鍮뚮뱶?먯꽌留?
         #ifdef _DEBUG
         OutputDebugStringA("Warning: Failed to load DDS textures from directory\n");
         #endif
     }
     
-    // Command list 실행 및 대기
+    // Command list ?ㅽ뻾 諛??湲?
     commandList->Close();
     ID3D12CommandQueue* commandQueue = m_RendererCore->GetCommandQueue();
     ID3D12CommandList* cmdLists[] = { commandList };
     commandQueue->ExecuteCommandLists(1, cmdLists);
     
-    // GPU 동기화 (텍스처 업로드 완료 대기)
-    // 텍스처 업로드가 완료될 때까지 대기하여 CommandAllocator 리셋 문제 방지
+    // GPU ?숆린??(?띿뒪泥??낅줈???꾨즺 ?湲?
+    // ?띿뒪泥??낅줈?쒓? ?꾨즺???뚭퉴吏 ?湲고븯??CommandAllocator 由ъ뀑 臾몄젣 諛⑹?
     m_RendererCore->FlushCommandQueue();
 }
 
 void RenderSystem::CreateConstantBuffer() {
     auto device = m_RendererCore->GetDevice();
 
-    // 상수 버퍼는 256바이트 배수로 정렬되어야 함
+    // ?곸닔 踰꾪띁??256諛붿씠??諛곗닔濡??뺣젹?섏뼱????
     m_ObjectConstantBufferSize = (sizeof(ObjectConstants) + 255) & ~255;
     m_MaterialConstantBufferSize = (sizeof(RenderMaterialConstants) + 255) & ~255;
     m_PassConstantBufferSize = (sizeof(PassConstants) + 255) & ~255;
@@ -100,7 +108,7 @@ void RenderSystem::CreateConstantBuffer() {
     heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
     heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-    // Object constant buffer (b0) - 100개 오브젝트까지 지원
+    // Object constant buffer (b0) - 100媛??ㅻ툕?앺듃源뚯? 吏??
     D3D12_RESOURCE_DESC resourceDesc = {};
     resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     resourceDesc.Width = m_ObjectConstantBufferSize * 100;
@@ -124,7 +132,7 @@ void RenderSystem::CreateConstantBuffer() {
         D3D12_RANGE readRange = { 0, 0 };
         m_ObjectConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_ObjectConstantBufferDataBegin[i]));
 
-        // Material constant buffers (b1) - 100개 머티리얼까지 지원
+        // Material constant buffers (b1) - 100媛?癒명떚由ъ뼹源뚯? 吏??
         resourceDesc.Width = m_MaterialConstantBufferSize * 100;
         device->CreateCommittedResource(
             &heapProps,
@@ -136,7 +144,7 @@ void RenderSystem::CreateConstantBuffer() {
         );
         m_MaterialConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_MaterialConstantBufferDataBegin[i]));
 
-        // Pass constant buffer (b2) - 프레임당 1개
+        // Pass constant buffer (b2) - ?꾨젅?꾨떦 1媛?
         resourceDesc.Width = m_PassConstantBufferSize;
         device->CreateCommittedResource(
             &heapProps,
@@ -165,7 +173,7 @@ void RenderSystem::CreateConstantBuffer() {
 void RenderSystem::CreateGBufferPipelineState() {
     auto device = m_RendererCore->GetDevice();
 
-    // 텍스처 SRV 테이블 (알비도, 노말맵) - 각각 별도의 descriptor table로 분리
+    // ?띿뒪泥?SRV ?뚯씠釉?(?뚮퉬?? ?몃쭚留? - 媛곴컖 蹂꾨룄??descriptor table濡?遺꾨━
     D3D12_DESCRIPTOR_RANGE srvTableAlbedo[1] = {};
     srvTableAlbedo[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     srvTableAlbedo[0].NumDescriptors = 1;
@@ -198,25 +206,25 @@ void RenderSystem::CreateGBufferPipelineState() {
     rootParameters[2].Descriptor.RegisterSpace = 0;
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-    // b3 : cbSkinning (본 팔레트)
+    // b3 : cbSkinning (蹂??붾젅??
     rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[3].Descriptor.ShaderRegister = 3; // b3
     rootParameters[3].Descriptor.RegisterSpace = 0;
     rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     
-    // 알비도 텍스처 SRV 테이블 (t0)
+    // ?뚮퉬???띿뒪泥?SRV ?뚯씠釉?(t0)
     rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[4].DescriptorTable.NumDescriptorRanges = 1;
     rootParameters[4].DescriptorTable.pDescriptorRanges = srvTableAlbedo;
     rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     
-    // 노말맵 텍스처 SRV 테이블 (t1)
+    // ?몃쭚留??띿뒪泥?SRV ?뚯씠釉?(t1)
     rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[5].DescriptorTable.NumDescriptorRanges = 1;
     rootParameters[5].DescriptorTable.pDescriptorRanges = srvTableNormal;
     rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    // 샘플러 설정
+    // ?섑뵆???ㅼ젙
     D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -295,11 +303,12 @@ void RenderSystem::CreateGBufferPipelineState() {
     pso.DepthStencilState = dsDesc;
     pso.SampleMask = UINT_MAX;
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    pso.NumRenderTargets = 4;
+    pso.NumRenderTargets = 5;
     pso.RTVFormats[0] = DXGI_FORMAT_R32G32B32A32_FLOAT;  // Position
     pso.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;  // Normal
     pso.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM;     // Albedo
     pso.RTVFormats[3] = DXGI_FORMAT_R8G8B8A8_UNORM;     // Material
+    pso.RTVFormats[4] = DXGI_FORMAT_R32_FLOAT;          // Depth
     pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
     pso.SampleDesc.Count = 1;
 
@@ -359,7 +368,7 @@ void RenderSystem::CreateLightingPipelineState() {
     rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
-    // s0 : 기존 GBuffer/SSGI용 포인트 샘플러
+    // s0 : 湲곗〈 GBuffer/SSGI???ъ씤???섑뵆??
     samplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
     samplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
     samplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -369,7 +378,7 @@ void RenderSystem::CreateLightingPipelineState() {
     samplers[0].RegisterSpace = 0;
     samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    // s1 : ShadowMap용 비교 샘플러
+    // s1 : ShadowMap??鍮꾧탳 ?섑뵆??
     samplers[1].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
     samplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
     samplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -385,7 +394,7 @@ void RenderSystem::CreateLightingPipelineState() {
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
     rootDesc.NumParameters = 2;
     rootDesc.pParameters = rootParameters;
-    rootDesc.NumStaticSamplers = 2;              // ★ 2개
+    rootDesc.NumStaticSamplers = 2;              // ??2媛?
     rootDesc.pStaticSamplers = samplers;
     rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
@@ -640,7 +649,7 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
 void RenderSystem::CreateShadowResources() {
     auto device = m_RendererCore->GetDevice();
 
-    // Shadow depth 텍스처 리소스 생성 (R24G8 typeless)
+    // Shadow depth ?띿뒪泥?由ъ냼???앹꽦 (R24G8 typeless)
     D3D12_RESOURCE_DESC texDesc = {};
     texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     texDesc.Alignment = 0;
@@ -670,11 +679,11 @@ void RenderSystem::CreateShadowResources() {
         &heapProps,
         D3D12_HEAP_FLAG_NONE,
         &texDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,    // 나중에 DEPTH_WRITE ↔ GENERIC_READ 전환
+        D3D12_RESOURCE_STATE_GENERIC_READ,    // ?섏쨷??DEPTH_WRITE ??GENERIC_READ ?꾪솚
         &optClear,
         IID_PPV_ARGS(&m_ShadowMap)));
 
-    // DSV heap 1개짜리
+    // DSV heap 1媛쒖쭨由?
     D3D12_DESCRIPTOR_HEAP_DESC dsvDesc = {};
     dsvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     dsvDesc.NumDescriptors = 1;
@@ -704,10 +713,10 @@ void RenderSystem::CreateShadowResources() {
     m_ShadowScissorRect.right = static_cast<LONG>(m_ShadowMapSize);
     m_ShadowScissorRect.bottom = static_cast<LONG>(m_ShadowMapSize);
 
-    // ★ SRV는 G-Buffer SRV Heap 안에서 RendererCore가 만들어줘야 함
-    // DXGI_FORMAT_R24_UNORM_X8_TYPELESS 포맷으로 SRV 생성해서 Lighting.hlsl t5에 바인딩.
+    // ??SRV??G-Buffer SRV Heap ?덉뿉??RendererCore媛 留뚮뱾?댁쨾????
+    // DXGI_FORMAT_R24_UNORM_X8_TYPELESS ?щ㎎?쇰줈 SRV ?앹꽦?댁꽌 Lighting.hlsl t5??諛붿씤??
 
-    // ShadowMap SRV: DSV는 D24_UNORM_S8_UINT, SRV는 R24_UNORM_X8_TYPELESS 로 만들어야 함.
+    // ShadowMap SRV: DSV??D24_UNORM_S8_UINT, SRV??R24_UNORM_X8_TYPELESS 濡?留뚮뱾?댁빞 ??
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -716,7 +725,7 @@ void RenderSystem::CreateShadowResources() {
     srvDesc.Texture2D.MipLevels = 1;
     srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
 
-    // GBuffer SRV heap의 t5 자리에 생성 (Position=t0, Normal=t1, Albedo=t2, Material=t3, SSGI=t4, Shadow=t5)
+    // GBuffer SRV heap??t5 ?먮━???앹꽦 (Position=t0, Normal=t1, Albedo=t2, Material=t3, SSGI=t4, Shadow=t5)
     auto shadowSrvHandle = m_RendererCore->GetGBufferSRVHandle(5);
     device->CreateShaderResourceView(m_ShadowMap.Get(), &srvDesc, shadowSrvHandle);
 }
@@ -729,7 +738,7 @@ void RenderSystem::CreateShadowPipelineState() {
     vs = d3dUtil::CompileShader(shaderPath, nullptr, "VS", "vs_5_0");
     ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
 
-    // GBuffer와 동일한 인풋 레이아웃
+    // GBuffer? ?숈씪???명뭼 ?덉씠?꾩썐
     D3D12_INPUT_ELEMENT_DESC inputElements[] = {
         { "POSITION",     0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "NORMAL",       0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -746,7 +755,7 @@ void RenderSystem::CreateShadowPipelineState() {
     rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
     rastDesc.CullMode = D3D12_CULL_MODE_BACK;
     rastDesc.FrontCounterClockwise = FALSE;
-    rastDesc.DepthBias = 100000;              // ★ depth bias
+    rastDesc.DepthBias = 100000;              // ??depth bias
     rastDesc.DepthBiasClamp = 0.0f;
     rastDesc.SlopeScaledDepthBias = 1.0f;
     rastDesc.DepthClipEnable = TRUE;
@@ -763,7 +772,7 @@ void RenderSystem::CreateShadowPipelineState() {
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
     pso.InputLayout = { inputElements, _countof(inputElements) };
-    pso.pRootSignature = m_GBufferRootSignature.Get();         // ★ GBuffer rootSig 재사용
+    pso.pRootSignature = m_GBufferRootSignature.Get();         // ??GBuffer rootSig ?ъ궗??
     pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
     pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
     pso.RasterizerState = rastDesc;
@@ -772,9 +781,9 @@ void RenderSystem::CreateShadowPipelineState() {
     pso.SampleMask = UINT_MAX;
     pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-    pso.NumRenderTargets = 0;                                // ★ 컬러 RT 없음
+    pso.NumRenderTargets = 0;                                // ??而щ윭 RT ?놁쓬
     pso.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
-    pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;           // CreateShadowResources와 맞춰야 함
+    pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;           // CreateShadowResources? 留욎떠????
     pso.SampleDesc.Count = 1;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_ShadowPipelineState)));
@@ -784,7 +793,7 @@ void RenderSystem::CreateShadowPipelineState() {
 void RenderSystem::Update(float deltaTime) {
     m_TotalTime += deltaTime;
 
-    // 1) 스켈레톤 가진 엔티티 하나 찾기
+    // 1) ?ㅼ펷?덊넠 媛吏??뷀떚???섎굹 李얘린
     Entity* skinnedEntity = nullptr;
     for (Entity* e : m_RenderableEntities) {
         if (e && e->HasComponent<SkeletonComponent>()) {
@@ -798,7 +807,7 @@ void RenderSystem::Update(float deltaTime) {
     if (!skeleton) return;
     if (skeleton->FinalBoneTransforms.empty()) return;
 
-    // 2) FinalBoneTransforms → SkinningConstants 복사
+    // 2) FinalBoneTransforms ??SkinningConstants 蹂듭궗
     SkinningConstants skin = {};
     const uint32_t boneCount = (std::min)(
         static_cast<uint32_t>(skeleton->FinalBoneTransforms.size()),
@@ -809,7 +818,7 @@ void RenderSystem::Update(float deltaTime) {
         XMMATRIX M = XMLoadFloat4x4(&skeleton->FinalBoneTransforms[i]);
         XMStoreFloat4x4(&skin.BoneTransforms[i], XMMatrixTranspose(M));
     }
-    // 남는 슬롯은 Identity로
+    // ?⑤뒗 ?щ’? Identity濡?
     for (size_t i = boneCount; i < MAX_BONES; ++i) {
         DirectX::XMStoreFloat4x4(
             &skin.BoneTransforms[i],
@@ -817,7 +826,7 @@ void RenderSystem::Update(float deltaTime) {
         );
     }
 
-    // 3) 모든 프레임의 cbSkinning 버퍼에 써주기 (FrameCount 개)
+    // 3) 紐⑤뱺 ?꾨젅?꾩쓽 cbSkinning 踰꾪띁???⑥＜湲?(FrameCount 媛?
     for (UINT frame = 0; frame < FrameCount; ++frame) {
         memcpy(
             m_SkinningConstantBufferDataBegin[frame],
@@ -843,6 +852,11 @@ void RenderSystem::Shutdown() {
         }
     }
 
+    if (m_DirectMLStyleTransferSystem) {
+        m_DirectMLStyleTransferSystem->Shutdown();
+        m_DirectMLStyleTransferSystem.reset();
+    }
+
     if (m_RendererCore) {
         m_RendererCore->Shutdown();
     }
@@ -852,12 +866,12 @@ void RenderSystem::RegisterEntity(Entity* entity) {
     if (entity->HasComponent<MeshComponent>() && entity->HasComponent<TransformComponent>()) {
         m_RenderableEntities.push_back(entity);
 
-        // GPU에 메시 업로드
+        // GPU??硫붿떆 ?낅줈??
         auto* meshComp = entity->GetComponent<MeshComponent>();
         if (meshComp && meshComp->isLoaded && !meshComp->vertexBuffer) {
             auto device = m_RendererCore->GetDevice();
 
-            // Vertex Buffer 생성
+            // Vertex Buffer ?앹꽦
             D3D12_HEAP_PROPERTIES heapProps = {};
             heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
             D3D12_RESOURCE_DESC bufferDesc = {};
@@ -880,7 +894,7 @@ void RenderSystem::RegisterEntity(Entity* entity) {
             meshComp->vertexBufferView.StrideInBytes = sizeof(Vertex);
             meshComp->vertexBufferView.SizeInBytes = static_cast<UINT>(sizeof(Vertex) * meshComp->vertices.size());
 
-            // Index Buffer 생성
+            // Index Buffer ?앹꽦
             bufferDesc.Width = sizeof(uint32_t) * meshComp->indices.size();
             device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&meshComp->indexBuffer));
 
@@ -911,17 +925,24 @@ void RenderSystem::Render() {
     // G-Buffer Pass
     RenderGBufferPass(frameIndex);
 
-    // SSGI Pass (항상 실행)
+    // SSGI Pass (??긽 ?ㅽ뻾)
     RenderSSGIPass(frameIndex);
 
-    // SSGI Denoise Pass (SSGI 결과를 필터링)
+    // SSGI Denoise Pass (SSGI 寃곌낵瑜??꾪꽣留?
     RenderSSGIDenoisePass(frameIndex);
 
-    // 현재 SSGI 결과를 이전 프레임 텍스처로 복사 (Temporal Filter용)
+    // ?꾩옱 SSGI 寃곌낵瑜??댁쟾 ?꾨젅???띿뒪泥섎줈 蹂듭궗 (Temporal Filter??
     CopySSGIToPrevious(frameIndex);
 
-    // Lighting Pass (모드에 따라 다른 결과 표시)
+    // Lighting Pass (紐⑤뱶???곕씪 ?ㅻⅨ 寃곌낵 ?쒖떆)
     RenderLightingPass(frameIndex);
+
+    if (m_DirectMLStyleTransferSystem && m_DirectMLStyleTransferSystem->Execute()) {
+        CopyFrameToBackBuffer(m_DirectMLStyleTransferSystem->GetOutputTexture());
+    }
+    else {
+        CopyFrameToBackBuffer(m_RendererCore->GetLightingBuffer());
+    }
 
     m_RendererCore->EndFrame();
     m_RendererCore->Present();
@@ -934,7 +955,7 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
     commandList->RSSetViewports(1, &m_ShadowViewport);
     commandList->RSSetScissorRects(1, &m_ShadowScissorRect);
 
-    // Shadow map을 DEPTH_WRITE 상태로
+    // Shadow map??DEPTH_WRITE ?곹깭濡?
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = m_ShadowMap.Get();
@@ -943,7 +964,7 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &barrier);
 
-    // 깊이만 클리어
+    // 源딆씠留??대━??
     commandList->ClearDepthStencilView(m_ShadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
     commandList->OMSetRenderTargets(0, nullptr, FALSE, &m_ShadowDsv);
 
@@ -954,13 +975,13 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
     int objectIndex = 0;
     for (Entity* entity : m_RenderableEntities) {
         if (entity && entity->IsActive()) {
-            // Object/Material/Pass CBV 셋업 + draw
+            // Object/Material/Pass CBV ?뗭뾽 + draw
             RenderEntity(entity, frameIndex, objectIndex);
             ++objectIndex;
         }
     }
 
-    // 다시 샘플링용 상태로
+    // ?ㅼ떆 ?섑뵆留곸슜 ?곹깭濡?
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
     commandList->ResourceBarrier(1, &barrier);
@@ -971,7 +992,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
 
-    // ShadowPass에서 바뀐 뷰포트/시저를 메인 화면 기준으로 복원
+    // ShadowPass?먯꽌 諛붾?酉고룷???쒖?瑜?硫붿씤 ?붾㈃ 湲곗??쇰줈 蹂듭썝
     D3D12_VIEWPORT mainViewport = {};
     mainViewport.TopLeftX = 0.0f;
     mainViewport.TopLeftY = 0.0f;
@@ -990,8 +1011,8 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     commandList->RSSetScissorRects(1, &mainScissor);
 
     // Transition G-Buffer to render target state
-    // barrier 배열을 항상 초기화 (나중에 다시 사용하기 위해)
-    D3D12_RESOURCE_BARRIER barriers[4] = {};
+    // barrier 諛곗뿴????긽 珥덇린??(?섏쨷???ㅼ떆 ?ъ슜?섍린 ?꾪빐)
+    D3D12_RESOURCE_BARRIER barriers[5] = {};
     barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
     barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -1000,8 +1021,10 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     barriers[2].Transition.pResource = m_RendererCore->GetGBufferAlbedo();
     barriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[3].Transition.pResource = m_RendererCore->GetGBufferMaterial();
+    barriers[4].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[4].Transition.pResource = m_RendererCore->GetGBufferDepth();
     
-    // 첫 프레임에서는 G-Buffer가 이미 RENDER_TARGET 상태로 시작
+    // 泥??꾨젅?꾩뿉?쒕뒗 G-Buffer媛 ?대? RENDER_TARGET ?곹깭濡??쒖옉
     if (!m_IsFirstGBufferFrame) {
         barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
         barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -1011,16 +1034,19 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
         barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
         barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
         barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        commandList->ResourceBarrier(4, barriers);
+        barriers[4].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        barriers[4].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        commandList->ResourceBarrier(5, barriers);
     }
     m_IsFirstGBufferFrame = false;
 
     // Set G-Buffer render targets
-    D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs[4] = {
+    D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs[5] = {
         m_RendererCore->GetGBufferRTVHandle(0),
         m_RendererCore->GetGBufferRTVHandle(1),
         m_RendererCore->GetGBufferRTVHandle(2),
-        m_RendererCore->GetGBufferRTVHandle(3)
+        m_RendererCore->GetGBufferRTVHandle(3),
+        m_RendererCore->GetGBufferRTVHandle(4)
     };
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_RendererCore->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
 
@@ -1030,9 +1056,10 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     commandList->ClearRenderTargetView(gbufferRTVs[1], clearColor, 0, nullptr);
     commandList->ClearRenderTargetView(gbufferRTVs[2], clearColor, 0, nullptr);
     commandList->ClearRenderTargetView(gbufferRTVs[3], clearColor, 0, nullptr);
+    commandList->ClearRenderTargetView(gbufferRTVs[4], clearColor, 0, nullptr);
     commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-    commandList->OMSetRenderTargets(4, gbufferRTVs, FALSE, &dsvHandle);
+    commandList->OMSetRenderTargets(5, gbufferRTVs, FALSE, &dsvHandle);
 
     // Set pipeline state
     commandList->SetPipelineState(m_GBufferPipelineState.Get());
@@ -1049,7 +1076,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     }
 
     // Transition G-Buffer to pixel shader resource state
-    // barrier 배열 재초기화 (안전하게)
+    // barrier 諛곗뿴 ?ъ큹湲고솕 (?덉쟾?섍쾶)
     barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
     barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -1069,49 +1096,79 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     barriers[3].Transition.pResource = m_RendererCore->GetGBufferMaterial();
     barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+    barriers[4].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barriers[4].Transition.pResource = m_RendererCore->GetGBufferDepth();
+    barriers[4].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barriers[4].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     
-    commandList->ResourceBarrier(4, barriers);
+    commandList->ResourceBarrier(5, barriers);
 }
 
 void RenderSystem::RenderLightingPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
-    auto device = m_RendererCore->GetDevice();
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_RendererCore->GetLightingRTVHandle();
 
-    // Get back buffer resource (we need to access it through RendererCore)
-    // For now, we'll get it from the RTV heap - but we need the actual resource
-    // This is a workaround - ideally RendererCore should expose GetBackBuffer()
-    // Get back buffer RTV
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_RendererCore->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart();
-    rtvHandle.ptr += m_RendererCore->GetFrameIndex() * m_RendererCore->GetRTVDescriptorSize();
+    if (!m_IsFirstLightingFrame) {
+        D3D12_RESOURCE_BARRIER toRenderTarget = {};
+        toRenderTarget.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        toRenderTarget.Transition.pResource = m_RendererCore->GetLightingBuffer();
+        toRenderTarget.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        toRenderTarget.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        toRenderTarget.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList->ResourceBarrier(1, &toRenderTarget);
+    }
 
-    // Note: Back buffer transition is handled in EndFrame
-    // For Lighting pass, we assume back buffer is already in RENDER_TARGET state
-    // If not, we need to add transition here
-
-    // Clear back buffer
     const float clearColor[] = { 0.2f, 0.2f, 0.2f, 1.0f };
     commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-
-    // Set render target to back buffer
     commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-
-    // Set pipeline state
     commandList->SetPipelineState(m_LightingPipelineState.Get());
     commandList->SetGraphicsRootSignature(m_LightingRootSignature.Get());
-
-    // Set pass constant buffer
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetGraphicsRootConstantBufferView(0, passCBAddress);
-
-    // Set G-Buffer SRVs
     ID3D12DescriptorHeap* srvHeaps[] = { m_RendererCore->GetGBufferSRVHeap() };
     commandList->SetDescriptorHeaps(1, srvHeaps);
     D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
     commandList->SetGraphicsRootDescriptorTable(1, srvHandle);
-
-    // Draw fullscreen quad
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->DrawInstanced(3, 1, 0, 0);
+
+    D3D12_RESOURCE_BARRIER toCopySource = {};
+    toCopySource.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toCopySource.Transition.pResource = m_RendererCore->GetLightingBuffer();
+    toCopySource.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toCopySource.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    toCopySource.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toCopySource);
+
+    m_IsFirstLightingFrame = false;
+}
+
+void RenderSystem::CopyFrameToBackBuffer(ID3D12Resource* sourceTexture) {
+    if (!sourceTexture) {
+        return;
+    }
+
+    auto* commandList = m_RendererCore->GetCommandList();
+    auto* backBuffer = m_RendererCore->GetCurrentBackBuffer();
+
+    D3D12_RESOURCE_BARRIER toCopyDest = {};
+    toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toCopyDest.Transition.pResource = backBuffer;
+    toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+    toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toCopyDest);
+
+    commandList->CopyResource(backBuffer, sourceTexture);
+
+    D3D12_RESOURCE_BARRIER toRenderTarget = {};
+    toRenderTarget.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toRenderTarget.Transition.pResource = backBuffer;
+    toRenderTarget.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    toRenderTarget.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toRenderTarget.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toRenderTarget);
 }
 
 void RenderSystem::ToggleRenderMode() {
@@ -1133,7 +1190,7 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     auto device = m_RendererCore->GetDevice();
 
     // Transition SSGI buffer to unordered access state
-    // 첫 프레임에서는 이미 UNORDERED_ACCESS 상태이므로 barrier를 건너뜀
+    // 泥??꾨젅?꾩뿉?쒕뒗 ?대? UNORDERED_ACCESS ?곹깭?대?濡?barrier瑜?嫄대꼫?
     D3D12_RESOURCE_BARRIER barrier = {};
     if (!m_IsFirstSSGIFrame) {
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -1152,7 +1209,7 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetComputeRootConstantBufferView(0, passCBAddress);
 
-    // Set descriptor heap (G-Buffer SRV Heap에 모든 descriptor가 포함되어 있음)
+    // Set descriptor heap (G-Buffer SRV Heap??紐⑤뱺 descriptor媛 ?ы븿?섏뼱 ?덉쓬)
     ID3D12DescriptorHeap* heaps[] = { m_RendererCore->GetGBufferSRVHeap() };
     commandList->SetDescriptorHeaps(1, heaps);
 
@@ -1160,7 +1217,7 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
     commandList->SetComputeRootDescriptorTable(1, srvHandle);
 
-    // Set SSGI UAV (G-Buffer SRV Heap에서 가져옴)
+    // Set SSGI UAV (G-Buffer SRV Heap?먯꽌 媛?몄샂)
     D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
     commandList->SetComputeRootDescriptorTable(2, uavHandle);
 
@@ -1171,10 +1228,10 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     uint32_t dispatchY = (height + 7) / 8;
     commandList->Dispatch(dispatchX, dispatchY, 1);
 
-    // SSGI 버퍼는 UNORDERED_ACCESS 상태로 유지
-    // Denoise 패스에서 SRV로 읽기 위해 상태 전환할 예정
+    // SSGI 踰꾪띁??UNORDERED_ACCESS ?곹깭濡??좎?
+    // Denoise ?⑥뒪?먯꽌 SRV濡??쎄린 ?꾪빐 ?곹깭 ?꾪솚???덉젙
     
-    // 첫 프레임 플래그 해제
+    // 泥??꾨젅???뚮옒洹??댁젣
     m_IsFirstSSGIFrame = false;
 }
 
@@ -1185,8 +1242,8 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // SSGI 패스에서 UAV로 출력한 상태
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;  // Denoise에서 SRV로 읽기
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // SSGI ?⑥뒪?먯꽌 UAV濡?異쒕젰???곹깭
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;  // Denoise?먯꽌 SRV濡??쎄린
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &barrier);
 
@@ -1198,7 +1255,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetComputeRootConstantBufferView(0, passCBAddress);
 
-    // Set descriptor heap (G-Buffer SRV Heap에 모든 descriptor가 포함되어 있음)
+    // Set descriptor heap (G-Buffer SRV Heap??紐⑤뱺 descriptor媛 ?ы븿?섏뼱 ?덉쓬)
     ID3D12DescriptorHeap* heaps[] = { m_RendererCore->GetGBufferSRVHeap() };
     commandList->SetDescriptorHeaps(1, heaps);
 
@@ -1213,21 +1270,21 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     normalHandle.ptr += m_RendererCore->GetGBufferSRVDescriptorSize();
     commandList->SetComputeRootDescriptorTable(2, normalHandle);
     
-    // Set SSGI Input SRV (G-Buffer SRV Heap의 4번째 슬롯)
+    // Set SSGI Input SRV (G-Buffer SRV Heap??4踰덉㎏ ?щ’)
     D3D12_GPU_DESCRIPTOR_HANDLE ssgiSrvHandle = m_RendererCore->GetSSGISRVHandleFromGBufferHeap();
     commandList->SetComputeRootDescriptorTable(3, ssgiSrvHandle);
     
-    // Set SSGI Previous SRV (G-Buffer SRV Heap의 7번째 슬롯)
+    // Set SSGI Previous SRV (G-Buffer SRV Heap??7踰덉㎏ ?щ’)
     D3D12_GPU_DESCRIPTOR_HANDLE ssgiPreviousSrvHandle = m_RendererCore->GetSSGIPreviousSRVHandleFromGBufferHeap();
     commandList->SetComputeRootDescriptorTable(4, ssgiPreviousSrvHandle);
     
-    // Set SSGI Output UAV (G-Buffer SRV Heap의 6번째 슬롯)
+    // Set SSGI Output UAV (G-Buffer SRV Heap??6踰덉㎏ ?щ’)
     D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
     commandList->SetComputeRootDescriptorTable(5, uavHandle);
 
-    // SSGI 버퍼를 UAV로 쓰기 위해 상태 전환
+    // SSGI 踰꾪띁瑜?UAV濡??곌린 ?꾪빐 ?곹깭 ?꾪솚
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // Denoise 출력용
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // Denoise 異쒕젰??
     commandList->ResourceBarrier(1, &barrier);
 
     // Dispatch compute shader (8x8 thread groups)
@@ -1237,7 +1294,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     uint32_t dispatchY = (height + 7) / 8;
     commandList->Dispatch(dispatchX, dispatchY, 1);
 
-    // SSGI 버퍼를 pixel shader resource 상태로 전환 (Lighting 패스에서 사용)
+    // SSGI 踰꾪띁瑜?pixel shader resource ?곹깭濡??꾪솚 (Lighting ?⑥뒪?먯꽌 ?ъ슜)
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     commandList->ResourceBarrier(1, &barrier);
@@ -1246,7 +1303,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
 void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     
-    // 현재 SSGI 버퍼를 COPY_SOURCE 상태로 전환
+    // ?꾩옱 SSGI 踰꾪띁瑜?COPY_SOURCE ?곹깭濡??꾪솚
     D3D12_RESOURCE_BARRIER barriers[2] = {};
     barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[0].Transition.pResource = m_RendererCore->GetSSGIBuffer();
@@ -1254,7 +1311,7 @@ void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
     barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
     barriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     
-    // 이전 프레임 SSGI 버퍼를 COPY_DEST 상태로 전환
+    // ?댁쟾 ?꾨젅??SSGI 踰꾪띁瑜?COPY_DEST ?곹깭濡??꾪솚
     barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[1].Transition.pResource = m_RendererCore->GetSSGIPreviousBuffer();
     barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
@@ -1263,13 +1320,13 @@ void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
     
     commandList->ResourceBarrier(2, barriers);
     
-    // 텍스처 복사
+    // ?띿뒪泥?蹂듭궗
     commandList->CopyResource(
         m_RendererCore->GetSSGIPreviousBuffer(),
         m_RendererCore->GetSSGIBuffer()
     );
     
-    // 상태를 원래대로 복원
+    // ?곹깭瑜??먮옒?濡?蹂듭썝
     barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
     barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     
@@ -1282,17 +1339,17 @@ void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     PassConstants passConstants = {};
     
-    // GameEngine에서 메인 카메라를 가져옵니다.
+    // GameEngine?먯꽌 硫붿씤 移대찓?쇰? 媛?몄샃?덈떎.
     Entity* mainCamera = m_Engine->GetMainCamera();
     if (!mainCamera) {
-        // 카메라가 없으면 렌더링 중단 (또는 기본 행렬 사용)
+        // 移대찓?쇨? ?놁쑝硫??뚮뜑留?以묐떒 (?먮뒗 湲곕낯 ?됰젹 ?ъ슜)
         return;
     }    
     
     auto cameraComp = mainCamera->GetComponent<CameraComponent>();
     if (!cameraComp) return;
 
-    // RenderSystem의 멤버 변수 대신, CameraComponent의 행렬을 직접 가져옵니다.
+    // RenderSystem??硫ㅻ쾭 蹂????? CameraComponent???됰젹??吏곸젒 媛?몄샃?덈떎.
     XMMATRIX V = XMLoadFloat4x4(&cameraComp->ViewMatrix);
     XMMATRIX P = XMLoadFloat4x4(&cameraComp->ProjMatrix);
     XMMATRIX VP = XMMatrixMultiply(V, P);
@@ -1304,23 +1361,23 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     XMStoreFloat4x4(&passConstants.gViewProj, XMMatrixTranspose(VP));
     XMStoreFloat4x4(&passConstants.gInvViewProj, XMMatrixTranspose(XMMatrixInverse(nullptr, VP)));
     
-    // === 여기부터 라이트 기준 Shadow 행렬 계산 ===
-    // 1) 방향광 0번의 방향 사용
+    // === ?ш린遺???쇱씠??湲곗? Shadow ?됰젹 怨꾩궛 ===
+    // 1) 諛⑺뼢愿?0踰덉쓽 諛⑺뼢 ?ъ슜
     XMVECTOR lightDir = XMVector3Normalize(
         XMLoadFloat3(&passConstants.gLights[0].Direction)
     );
 
-    // 혹시 0벡터면 기본 방향 사용
+    // ?뱀떆 0踰≫꽣硫?湲곕낯 諛⑺뼢 ?ъ슜
     if (XMVector3Less(XMVector3LengthSq(lightDir), XMVectorReplicate(0.001f)))
     {
         lightDir = XMVectorSet(0.577f, -0.577f, 0.577f, 0.0f);
     }
 
-    // 2) 섀도우가 비출 타겟 위치 (일단 월드 원점 근처로)
+    // 2) ??꾩슦媛 鍮꾩텧 ?寃??꾩튂 (?쇰떒 ?붾뱶 ?먯젏 洹쇱쿂濡?
     XMVECTOR targetPos = XMVectorZero();
 
-    // 라이트 위치 = 타겟 - dir * distance
-    const float lightDist = 50.0f; // 씬 규모 보고 적당히 조절
+    // ?쇱씠???꾩튂 = ?寃?- dir * distance
+    const float lightDist = 50.0f; // ??洹쒕え 蹂닿퀬 ?곷떦??議곗젅
     XMVECTOR lightPos = XMVectorMultiplyAdd(
         XMVectorReplicate(-lightDist),
         lightDir,
@@ -1331,7 +1388,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
 
     XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, up);
 
-    // 3) 직교 프로젝션 (섀도우 범위)
+    // 3) 吏곴탳 ?꾨줈?앹뀡 (??꾩슦 踰붿쐞)
     float l = -50.0f, r = 50.0f;
     float b = -50.0f, t = 50.0f;
     float n = 1.0f, f = 150.0f;
@@ -1343,7 +1400,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     XMStoreFloat4x4(&passConstants.gShadowProj, XMMatrixTranspose(lightProj));
     XMStoreFloat4x4(&passConstants.gShadowViewProj, XMMatrixTranspose(lightViewProj));
 
-    // 4) NDC(-1~1) → 텍스처(0~1) 변환 행렬
+    // 4) NDC(-1~1) ???띿뒪泥?0~1) 蹂???됰젹
     XMMATRIX T(
         0.5f, 0.0f, 0.0f, 0.0f,
         0.0f, -0.5f, 0.0f, 0.0f,
@@ -1370,8 +1427,8 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.cbPerObjectPad3 = 0.0f;
     passConstants.cbPerObjectPad4 = XMFLOAT2(0.0f, 0.0f);
     
-    // 기본 방향광 4개 설정 (셰이더가 NUM_DIR_LIGHTS=4을 기대함)
-    // 첫 번째 라이트: 위에서 아래로
+    // 湲곕낯 諛⑺뼢愿?4媛??ㅼ젙 (?곗씠?붽? NUM_DIR_LIGHTS=4??湲곕???
+    // 泥?踰덉㎏ ?쇱씠?? ?꾩뿉???꾨옒濡?
     passConstants.gLights[0].Strength = XMFLOAT3(0.9f, 0.9f, 0.9f);
     passConstants.gLights[0].Direction = XMFLOAT3(0.0f, -1.0f, 0.0f);
     passConstants.gLights[0].FalloffStart = 1.0f;
@@ -1379,7 +1436,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gLights[0].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
     passConstants.gLights[0].SpotPower = 1.0f;
     
-    // 두 번째 라이트: 약간의 보조광
+    // ??踰덉㎏ ?쇱씠?? ?쎄컙??蹂댁“愿?
     passConstants.gLights[1].Strength = XMFLOAT3(0.3f, 0.3f, 0.3f);
     passConstants.gLights[1].Direction = XMFLOAT3(-0.5f, -0.5f, -0.5f);
     passConstants.gLights[1].FalloffStart = 1.0f;
@@ -1387,7 +1444,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gLights[1].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
     passConstants.gLights[1].SpotPower = 64.0f;
     
-    // 세 번째 라이트: 약간의 보조광
+    // ??踰덉㎏ ?쇱씠?? ?쎄컙??蹂댁“愿?
     passConstants.gLights[2].Strength = XMFLOAT3(0.2f, 0.2f, 0.2f);
     passConstants.gLights[2].Direction = XMFLOAT3(0.5f, -0.5f, 0.5f);
     passConstants.gLights[2].FalloffStart = 1.0f;
@@ -1395,7 +1452,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gLights[2].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
     passConstants.gLights[2].SpotPower = 64.0f;
     
-    // 네 번째 라이트: Z방향 뒤에서 오는 라이트
+    // ??踰덉㎏ ?쇱씠?? Z諛⑺뼢 ?ㅼ뿉???ㅻ뒗 ?쇱씠??
     passConstants.gLights[3].Strength = XMFLOAT3(0.4f, 0.4f, 0.4f);
     passConstants.gLights[3].Direction = XMFLOAT3(0.0f, 0.0f, -1.0f);
     passConstants.gLights[3].FalloffStart = 1.0f;
@@ -1403,7 +1460,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gLights[3].Position = XMFLOAT3(0.0f, 0.0f, 0.0f);
     passConstants.gLights[3].SpotPower = 1.0f;
     
-    // 나머지 라이트는 0으로 초기화
+    // ?섎㉧吏 ?쇱씠?몃뒗 0?쇰줈 珥덇린??
     for (int i = 4; i < 16; ++i) {
         passConstants.gLights[i].Strength = XMFLOAT3(0.0f, 0.0f, 0.0f);
         passConstants.gLights[i].Direction = XMFLOAT3(0.0f, 0.0f, 0.0f);
@@ -1415,7 +1472,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
 
 
 
-    // 마지막에 memcpy 그대로 유지
+    // 留덉?留됱뿉 memcpy 洹몃?濡??좎?
     memcpy(m_PassConstantBufferDataBegin[frameIndex], &passConstants, sizeof(PassConstants));
 }
 
@@ -1430,97 +1487,96 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
 
     auto commandList = m_RendererCore->GetCommandList();
 
-    // Object constants (b0)
     ObjectConstants objConstants = {};
     XMMATRIX W = transform->GetWorldMatrix();
     XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
     XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
     XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
-    
-    memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize), 
-           &objConstants, sizeof(ObjectConstants));
-    
-    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = m_ObjectConstantBuffers[frameIndex]->GetGPUVirtualAddress() 
-                                           + (objectIndex * m_ObjectConstantBufferSize);
+
+    memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize),
+        &objConstants, sizeof(ObjectConstants));
+
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = m_ObjectConstantBuffers[frameIndex]->GetGPUVirtualAddress()
+        + (objectIndex * m_ObjectConstantBufferSize);
     commandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
-    // Material constants (b1)
     RenderMaterialConstants matConstants = {};
     matConstants.gDiffuseAlbedo = material->albedo;
-    
-    // FresnelR0 계산: metallic 값에 따라 보간
+
     XMFLOAT3 dielectricF0 = XMFLOAT3(0.04f, 0.04f, 0.04f);
     XMVECTOR f0Dielectric = XMLoadFloat3(&dielectricF0);
     XMVECTOR f0Metal = XMLoadFloat4(&material->albedo);
     XMVECTOR f0 = XMVectorLerp(f0Dielectric, f0Metal, material->metallic);
     XMStoreFloat3(&matConstants.gFresnelR0, f0);
-    
+
     matConstants.gRoughness = material->roughness;
     XMStoreFloat4x4(&matConstants.gMatTransform, XMMatrixIdentity());
-    
-    memcpy(m_MaterialConstantBufferDataBegin[frameIndex] + (objectIndex * m_MaterialConstantBufferSize), 
-           &matConstants, sizeof(RenderMaterialConstants));
-    
-    D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = m_MaterialConstantBuffers[frameIndex]->GetGPUVirtualAddress() 
-                                            + (objectIndex * m_MaterialConstantBufferSize);
+
+    memcpy(m_MaterialConstantBufferDataBegin[frameIndex] + (objectIndex * m_MaterialConstantBufferSize),
+        &matConstants, sizeof(RenderMaterialConstants));
+
+    D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = m_MaterialConstantBuffers[frameIndex]->GetGPUVirtualAddress()
+        + (objectIndex * m_MaterialConstantBufferSize);
     commandList->SetGraphicsRootConstantBufferView(1, matCBAddress);
 
-    // Pass constants (b2) - 프레임당 한 번만 바인딩
     if (objectIndex == 0) {
         D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
         commandList->SetGraphicsRootConstantBufferView(2, passCBAddress);
     }
 
-    // Skinning constants (b3) - 일단 전 오브젝트 공통으로 frameIndex 기준 0번만 사용
     D3D12_GPU_VIRTUAL_ADDRESS skinCBAddress =
         m_SkinningConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetGraphicsRootConstantBufferView(3, skinCBAddress);
 
-    // 텍스처 바인딩 (root parameter 4)
-    auto textureManager = TextureManager::Get();
-    
-    // 알비도 텍스처 가져오기 (없으면 기본 텍스처 사용)
-    TextureInfo* albedoTexture = textureManager->GetTexture(material->albedoTextureName);
-    if (!albedoTexture || !albedoTexture->IsValid) {
-        albedoTexture = textureManager->GetTexture("white1x1");
-    }
-    
-    // 노말맵 텍스처 가져오기 (없으면 기본 텍스처 사용)
-    TextureInfo* normalTexture = textureManager->GetTexture(material->normalTextureName);
-    if (!normalTexture || !normalTexture->IsValid) {
-        normalTexture = textureManager->GetTexture("white1x1");
-    }
-    
-    // 기본 텍스처가 없으면 에러 (셰이더에서 텍스처를 샘플링하므로 필수)
-    if (!albedoTexture || !normalTexture || !albedoTexture->IsValid || !normalTexture->IsValid) {
-        #ifdef _DEBUG
-        OutputDebugStringA("Error: Default texture (white1x1) not loaded! Texture binding failed.\n");
-        #endif
-        // 텍스처 없이 렌더링하면 크래시가 발생할 수 있으므로 리턴
-        return;
-    }
-    
-    // SRV 힙 설정 (이미 설정되어 있을 수 있지만 안전하게)
     ID3D12DescriptorHeap* srvHeaps[] = { m_RendererCore->GetGBufferSRVHeap() };
     commandList->SetDescriptorHeaps(1, srvHeaps);
-    
-    // 텍스처 SRV 바인딩
-    // GBuffer SRV 힙의 시작은 인덱스 8부터 (0-7은 G-Buffer, SSGI, Shadow용)
-    D3D12_GPU_DESCRIPTOR_HANDLE baseHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
-    UINT descriptorSize = m_RendererCore->GetGBufferSRVDescriptorSize();
-    
-    // 알비도 텍스처 핸들 계산 (root parameter 4)
-    D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle = baseHandle;
-    albedoHandle.ptr += (8 + albedoTexture->SRVIndex) * descriptorSize;
-    commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
-    
-    // 노말맵 텍스처 핸들 계산 (root parameter 5)
-    D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = baseHandle;
-    normalHandle.ptr += (8 + normalTexture->SRVIndex) * descriptorSize;
-    commandList->SetGraphicsRootDescriptorTable(5, normalHandle);
-
-    // 메시 렌더링
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);
     commandList->IASetIndexBuffer(&mesh->indexBufferView);
-    commandList->DrawIndexedInstanced(static_cast<UINT>(mesh->indices.size()), 1, 0, 0, 0);
+
+    auto textureManager = TextureManager::Get();
+    D3D12_GPU_DESCRIPTOR_HANDLE baseHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
+    UINT descriptorSize = m_RendererCore->GetGBufferSRVDescriptorSize();
+
+    auto bindAndDrawSubmesh = [&](uint32_t startIndex, uint32_t indexCount, const std::string& albedoTextureName, const std::string& normalTextureName) {
+        TextureInfo* albedoTexture = textureManager->GetTexture(albedoTextureName);
+        if (!albedoTexture || !albedoTexture->IsValid) {
+            albedoTexture = textureManager->GetTexture("white1x1");
+        }
+
+        TextureInfo* normalTexture = textureManager->GetTexture(normalTextureName);
+        if (!normalTexture || !normalTexture->IsValid) {
+            normalTexture = textureManager->GetTexture("white1x1");
+        }
+
+        if (!albedoTexture || !normalTexture || !albedoTexture->IsValid || !normalTexture->IsValid) {
+#ifdef _DEBUG
+            OutputDebugStringA("Error: Default texture (white1x1) not loaded! Texture binding failed.\n");
+#endif
+            return;
+        }
+
+        D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle = baseHandle;
+        albedoHandle.ptr += (8 + albedoTexture->SRVIndex) * descriptorSize;
+        commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
+
+        D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = baseHandle;
+        normalHandle.ptr += (8 + normalTexture->SRVIndex) * descriptorSize;
+        commandList->SetGraphicsRootDescriptorTable(5, normalHandle);
+
+        commandList->DrawIndexedInstanced(indexCount, 1, startIndex, 0, 0);
+    };
+
+    if (!mesh->submeshes.empty()) {
+        for (const auto& submesh : mesh->submeshes) {
+            const std::string& albedoTextureName =
+                submesh.albedoTextureName.empty() ? material->albedoTextureName : submesh.albedoTextureName;
+            const std::string& normalTextureName =
+                submesh.normalTextureName.empty() ? material->normalTextureName : submesh.normalTextureName;
+
+            bindAndDrawSubmesh(submesh.startIndex, submesh.indexCount, albedoTextureName, normalTextureName);
+        }
+    }
+    else {
+        bindAndDrawSubmesh(0u, static_cast<uint32_t>(mesh->indices.size()), material->albedoTextureName, material->normalTextureName);
+    }
 }

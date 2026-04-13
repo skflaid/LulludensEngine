@@ -93,6 +93,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&last);
 
+    float fpsTimer = 0.0f;
+    int frameCount = 0;
+
     while (g_Running)
     {
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
@@ -104,6 +107,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         QueryPerformanceCounter(&cur);
         float dt = static_cast<float>(cur.QuadPart - last.QuadPart) / freq.QuadPart;
         last = cur;
+
+        fpsTimer += dt;
+        frameCount++;
+
+        if (fpsTimer >= 1.0f)
+        {
+            float fps = frameCount / fpsTimer;
+
+            wchar_t title[256];
+            swprintf_s(title, L"Game Engine - FPS: %.2f", fps);
+            SetWindowText(g_Hwnd, title);
+
+            frameCount = 0;
+            fpsTimer = 0.0f;
+        }
 
         g_Engine.Update(dt);
         g_Engine.Render();

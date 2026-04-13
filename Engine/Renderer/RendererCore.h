@@ -22,6 +22,8 @@ public:
     
     // GPU 동기화 - 모든 명령 실행 완료 대기
     void FlushCommandQueue();
+    void ExecuteCommandListAndWait();
+    void ResetCommandList();
 
     ID3D12Device* GetDevice() const { return m_Device.Get(); }
     ID3D12GraphicsCommandList* GetCommandList() const { return m_CommandList.Get(); }
@@ -40,11 +42,16 @@ public:
     ID3D12Resource* GetGBufferNormal() const { return m_GBufferNormal.Get(); }
     ID3D12Resource* GetGBufferAlbedo() const { return m_GBufferAlbedo.Get(); }
     ID3D12Resource* GetGBufferMaterial() const { return m_GBufferMaterial.Get(); }
+    ID3D12Resource* GetGBufferDepth() const { return m_GBufferDepth.Get(); }
     ID3D12DescriptorHeap* GetGBufferRTVHeap() const { return m_GBufferRTVHeap.Get(); }
     ID3D12DescriptorHeap* GetGBufferSRVHeap() const { return m_GBufferSRVHeap.Get(); }
     uint32_t GetGBufferSRVDescriptorSize() const { return m_GBufferSRVDescriptorSize; }
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferRTVHandle(int index) const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferSRVHandle(int index) const;
+    ID3D12Resource* GetLightingBuffer() const { return m_LightingBuffer.Get(); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetLightingRTVHandle() const;
+    ID3D12Resource* GetCurrentBackBuffer() const { return m_RenderTargets[m_FrameIndex].Get(); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferRTV() const;
 
     // SSGI access
     ID3D12Resource* GetSSGIBuffer() const { return m_SSGIBuffer.Get(); }
@@ -65,6 +72,7 @@ private:
     void CreateRenderTargetViews();
     void CreateDepthStencilBuffer();
     void CreateGBuffer();
+    void CreateLightingBuffer();
     void CreateSSGIBuffer();
     void CreateFence();
 
@@ -96,10 +104,14 @@ private:
     ComPtr<ID3D12Resource> m_GBufferNormal;
     ComPtr<ID3D12Resource> m_GBufferAlbedo;
     ComPtr<ID3D12Resource> m_GBufferMaterial;
+    ComPtr<ID3D12Resource> m_GBufferDepth;
     ComPtr<ID3D12DescriptorHeap> m_GBufferRTVHeap;
     ComPtr<ID3D12DescriptorHeap> m_GBufferSRVHeap;
     uint32_t m_GBufferRTVDescriptorSize;
     uint32_t m_GBufferSRVDescriptorSize;
+    ComPtr<ID3D12Resource> m_LightingBuffer;
+    ComPtr<ID3D12DescriptorHeap> m_LightingRTVHeap;
+    uint32_t m_LightingRTVDescriptorSize;
 
     // SSGI
     ComPtr<ID3D12Resource> m_SSGIBuffer;

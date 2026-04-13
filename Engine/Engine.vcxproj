@@ -148,6 +148,7 @@
     <ClInclude Include="Core\ResourceManager.h" />
     <ClInclude Include="Core\TextureManager.h" />
     <ClInclude Include="Core\InputManager.h" />
+    <ClInclude Include="Inference\DirectMLStyleTransferSystem.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
     <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
     <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
@@ -185,6 +186,7 @@
     <ClCompile Include="Core\ModelInstantiation.cpp" />
     <ClCompile Include="Core\TextureManager.cpp" />
     <ClCompile Include="Core\InputManager.cpp" />
+    <ClCompile Include="Inference\DirectMLStyleTransferSystem.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />

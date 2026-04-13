@@ -4,24 +4,24 @@
 #include "Systems/DynamicsSystem.h"
 #include "Systems/CollisionSystem.h"
 
-// --- »ı¼ºÀÚ¿¡¼­ Áß·Â°ú °íÁ¤ ½Ã°£ °£°İÀ» ÃÊ±âÈ­ÇÕ´Ï´Ù ---
+// --- ìƒì„±ìì—ì„œ ì¤‘ë ¥ê³¼ ê³ ì • ì‹œê°„ ê°„ê²©ì„ ì´ˆê¸°í™”í•©ë‹ˆë‹¤ ---
 PhysicsWorld::PhysicsWorld()
     : m_Gravity({ 0.0f, -9.81f, 0.0f }), m_FixedTimeStep(1.0f / 60.0f)
 {
 }
-// --- ¿©±â±îÁö°¡ ÇÙ½É ¼öÁ¤»çÇ×ÀÔ´Ï´Ù ---
+// --- ì—¬ê¸°ê¹Œì§€ê°€ í•µì‹¬ ìˆ˜ì •ì‚¬í•­ì…ë‹ˆë‹¤ ---
 
 PhysicsWorld::~PhysicsWorld() {
     Shutdown();
 }
 
 void PhysicsWorld::Initialize() {
-    // ÇöÀç´Â Æ¯º°ÇÑ ÃÊ±âÈ­ ³»¿ë ¾øÀ½
+    // í˜„ì¬ëŠ” íŠ¹ë³„í•œ ì´ˆê¸°í™” ë‚´ìš© ì—†ìŒ
 }
 
 void PhysicsWorld::Update(float deltaTime) {
-    // ½Ã½ºÅÛµéÀÌ Ãß°¡µÈ ¼ø¼­´ë·Î ½ÇÇàµÊ
-    // MainApp.cpp¿¡¼­ Dynamics -> Collision ¼ø¼­·Î AddSystemÀ» È£ÃâÇÏ´Â °ÍÀÌ Áß¿ä
+    // ì‹œìŠ¤í…œë“¤ì´ ì¶”ê°€ëœ ìˆœì„œëŒ€ë¡œ ì‹¤í–‰ë¨
+    // MainApp.cppì—ì„œ Dynamics -> Collision ìˆœì„œë¡œ AddSystemì„ í˜¸ì¶œí•˜ëŠ” ê²ƒì´ ì¤‘ìš”
     for (auto& system : m_Systems) {
         if (system->IsEnabled()) {
             system->Update(deltaTime);
@@ -40,16 +40,16 @@ void PhysicsWorld::Shutdown() {
 void PhysicsWorld::RegisterEntity(Entity* entity) {
     m_Entities.push_back(entity);
 
-    // ¸ğµç ½Ã½ºÅÛ¿¡ ¿£Æ¼Æ¼ µî·Ï ½Ãµµ
+    // ëª¨ë“  ì‹œìŠ¤í…œì— ì—”í‹°í‹° ë“±ë¡ ì‹œë„
     for (auto& system : m_Systems) {
-        // DynamicsSystemÀÎÁö È®ÀÎ
+        // DynamicsSystemì¸ì§€ í™•ì¸
         DynamicsSystem* dynamicsSystem = dynamic_cast<DynamicsSystem*>(system.get());
         if (dynamicsSystem) {
             dynamicsSystem->RegisterEntity(entity);
             continue;
         }
 
-        // CollisionSystemÀÎÁö È®ÀÎ
+        // CollisionSystemì¸ì§€ í™•ì¸
         CollisionSystem* collisionSystem = dynamic_cast<CollisionSystem*>(system.get());
         if (collisionSystem) {
             collisionSystem->RegisterEntity(entity);
@@ -59,10 +59,10 @@ void PhysicsWorld::RegisterEntity(Entity* entity) {
 }
 
 void PhysicsWorld::UnregisterEntity(Entity* entity) {
-    // PhysicsWorldÀÇ ¿£Æ¼Æ¼ ¸ñ·Ï¿¡¼­ Á¦°Å
+    // PhysicsWorldì˜ ì—”í‹°í‹° ëª©ë¡ì—ì„œ ì œê±°
     m_Entities.erase(std::remove(m_Entities.begin(), m_Entities.end(), entity), m_Entities.end());
 
-    // ¸ğµç ½Ã½ºÅÛ¿¡ ¿£Æ¼Æ¼ µî·Ï ÇØÁ¦ ¿äÃ»
+    // ëª¨ë“  ì‹œìŠ¤í…œì— ì—”í‹°í‹° ë“±ë¡ í•´ì œ ìš”ì²­
     for (auto& system : m_Systems) {
         if (dynamic_cast<DynamicsSystem*>(system.get())) {
             dynamic_cast<DynamicsSystem*>(system.get())->UnregisterEntity(entity);

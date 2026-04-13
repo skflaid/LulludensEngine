@@ -12,6 +12,7 @@ using namespace DirectX;
 static constexpr UINT MAX_BONES = 128;
 
 class GameEngine;
+class DirectMLStyleTransferSystem;
 
 enum class RenderMode {
     Composite,  // Lighting + SSGI
@@ -46,6 +47,7 @@ private:
     void RenderSSGIPass(UINT frameIndex);
     void RenderSSGIDenoisePass(UINT frameIndex);
     void CopySSGIToPrevious(UINT frameIndex);
+    void CopyFrameToBackBuffer(ID3D12Resource* sourceTexture);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
 
@@ -64,6 +66,7 @@ private:
     GameEngine* m_Engine = nullptr; // GameEngine 포인터 멤버
 
     std::unique_ptr<RendererCore> m_RendererCore;
+    std::unique_ptr<DirectMLStyleTransferSystem> m_DirectMLStyleTransferSystem;
     std::vector<Entity*> m_RenderableEntities;
     HWND m_Hwnd;
     uint32_t m_Width;
@@ -105,6 +108,7 @@ private:
     bool m_IsFirstSSGIFrame = true;
     // First frame flag for G-Buffer barrier
     bool m_IsFirstGBufferFrame = true;
+    bool m_IsFirstLightingFrame = true;
 
     // Constant buffers
     static const int FrameCount = 2;

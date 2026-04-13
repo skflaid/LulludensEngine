@@ -1,12 +1,12 @@
 #include "EntityInspector.h"
 #include "GameEngine.h"
 #include "Core/Entity.h"
-#include "Renderer/Components/TransformComponent.h" // ³×°¡ ¾²´Â °æ·Î ±×´ë·Î
+#include "Renderer/Components/TransformComponent.h" // ë„¤ê°€ ì“°ëŠ” ê²½ë¡œ ê·¸ëŒ€ë¡œ
 
 #include <string>
-#include <format> // C++20 °¡´ÉÇÏ¸é »ç¿ë. ºÒ°¡ÇÏ¸é swprintf »ç¿ë
+#include <format> // C++20 ê°€ëŠ¥í•˜ë©´ ì‚¬ìš©. ë¶ˆê°€í•˜ë©´ swprintf ì‚¬ìš©
 
-// ·¹ÀÌ¾Æ¿ô »ó¼ö
+// ë ˆì´ì•„ì›ƒ ìƒìˆ˜
 static const int PAD = 8;
 static const int LIST_W = 200;
 static const int ROW_H = 22;
@@ -22,7 +22,7 @@ bool EntityInspector::Create(HWND hParent, HINSTANCE hInst)
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     RegisterClass(&wc);
 
-    // ¿ì»ó´Ü¿¡ ¶ç¿ì°í ½Í´Ù¸é À§Ä¡ Á¶Àı
+    // ìš°ìƒë‹¨ì— ë„ìš°ê³  ì‹¶ë‹¤ë©´ ìœ„ì¹˜ ì¡°ì ˆ
     m_hWnd = CreateWindowEx(
         WS_EX_TOOLWINDOW,
         wc.lpszClassName,
@@ -41,12 +41,12 @@ void EntityInspector::Show(int nCmdShow)
 
 void EntityInspector::BuildUI(HINSTANCE hInst)
 {
-    // ¸®½ºÆ®
+    // ë¦¬ìŠ¤íŠ¸
     m_hList = CreateWindowEx(WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | LBS_NOTIFY | WS_VSCROLL,
         PAD, PAD, LIST_W, 300, m_hWnd, (HMENU)IDC_EI_LIST, hInst, nullptr);
 
-    // ¶óº§+¿¡µ÷ À¯Æ¿
+    // ë¼ë²¨+ì—ë”§ ìœ í‹¸
     auto mkLabel = [&](int x, int y, const wchar_t* text) {
         return CreateWindow(L"STATIC", text, WS_CHILD | WS_VISIBLE,
             x, y, LABEL_W, ROW_H, m_hWnd, nullptr, hInst, nullptr);
@@ -98,14 +98,14 @@ void EntityInspector::Update(GameEngine* engine)
 {
     if (!m_hWnd) return;
 
-    // ¿£Æ¼Æ¼ °³¼ö º¯ÇÏ¸é ¸®½ºÆ® °»½Å
+    // ì—”í‹°í‹° ê°œìˆ˜ ë³€í•˜ë©´ ë¦¬ìŠ¤íŠ¸ ê°±ì‹ 
     const uint64_t countNow = engine->GetEntityCount();
     if (countNow != m_EntityCountCached)
     {
         PopulateList(engine);
     }
 
-    // ¼±ÅÃµÈ Ç×¸ñÀÇ Æ®·£½ºÆû¸¸ °»½Å
+    // ì„ íƒëœ í•­ëª©ì˜ íŠ¸ëœìŠ¤í¼ë§Œ ê°±ì‹ 
     int sel = (int)SendMessage(m_hList, LB_GETCURSEL, 0, 0);
     if (sel != LB_ERR)
     {
@@ -115,7 +115,7 @@ void EntityInspector::Update(GameEngine* engine)
     }
     else if (m_LastSelection != -1)
     {
-        // ¼±ÅÃ ÇØÁ¦µÇ¸é ÇÊµå ºñ¿ì±â
+        // ì„ íƒ í•´ì œë˜ë©´ í•„ë“œ ë¹„ìš°ê¸°
         SetWindowText(m_hPosX, L""); SetWindowText(m_hPosY, L""); SetWindowText(m_hPosZ, L"");
         SetWindowText(m_hRotX, L""); SetWindowText(m_hRotY, L""); SetWindowText(m_hRotZ, L"");
         SetWindowText(m_hScaX, L""); SetWindowText(m_hScaY, L""); SetWindowText(m_hScaZ, L"");
@@ -131,7 +131,7 @@ void EntityInspector::UpdateFields(Entity* entity)
     auto* t = entity->GetComponent<TransformComponent>();
     if (!t) return;
 
-    // °ª °¡Á®¿À±â
+    // ê°’ ê°€ì ¸ì˜¤ê¸°
     auto p = t->GetPosition();
     auto r = t->GetRotation();
     auto s = t->GetScale();
@@ -182,7 +182,7 @@ LRESULT EntityInspector::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_SIZE:
     case WM_MOVE:
-        // ´Ü¼øÅøÀÌ¶ó ·¹ÀÌ¾Æ¿ô °íÁ¤. ÇÊ¿ä½Ã ¸®»çÀÌÁî Ã³¸® Ãß°¡.
+        // ë‹¨ìˆœíˆ´ì´ë¼ ë ˆì´ì•„ì›ƒ ê³ ì •. í•„ìš”ì‹œ ë¦¬ì‚¬ì´ì¦ˆ ì²˜ë¦¬ ì¶”ê°€.
         return 0;
 
     case WM_CLOSE:

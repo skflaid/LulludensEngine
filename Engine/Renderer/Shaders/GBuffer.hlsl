@@ -73,6 +73,7 @@ struct VertexOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float2 TexC : TEXCOORD;
+    float ViewDepth : TEXCOORD1;
 };
 
 VertexOut VS(VertexIn vin)
@@ -123,6 +124,8 @@ VertexOut VS(VertexIn vin)
 
     // 월드 → 클립
     vout.PosH = mul(posW, gViewProj);
+    float4 posV = mul(posW, gView);
+    vout.ViewDepth = posV.z;
 
     // UV는 그대로
     vout.TexC = vin.TexC;
@@ -138,6 +141,7 @@ struct GBufferOut
     float4 Normal   : SV_Target1;  // World normal
     float4 Albedo   : SV_Target2;  // Diffuse albedo
     float4 Material : SV_Target3;  // Roughness, Metallic, etc.
+    float4 Depth    : SV_Target4;  // View-space depth
 };
 
 GBufferOut PS(VertexOut pin)
@@ -176,6 +180,7 @@ GBufferOut PS(VertexOut pin)
 
     // Material properties
     gbuffer.Material = float4(gRoughness, 0.0f, gFresnelR0.x, 1.0f);
+    gbuffer.Depth = float4(pin.ViewDepth, 0.0f, 0.0f, 1.0f);
 
     return gbuffer;
 }

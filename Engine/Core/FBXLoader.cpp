@@ -1,17 +1,18 @@
 #include "FBXLoader.h"
-#include "Renderer/Model.h" // Model, Mesh, Vertex, Material 구조체
-//#include "Core/GameEngine.h"  // 엔진의 핵심 기능 접근용 (가상의 클래스)
+#include "Renderer/Model.h" // Model, Mesh, Vertex, Material 援ъ“泥?
+//#include "Core/GameEngine.h"  // ?붿쭊???듭떖 湲곕뒫 ?묎렐??(媛?곸쓽 ?대옒??
 
-// Assimp 헤더
+// Assimp ?ㅻ뜑
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-// DirectX 헤더
+// DirectX ?ㅻ뜑
 #include <DirectXMath.h>
 #include <d3d12.h>
 #include <wrl.h>
 
+#include <filesystem>
 #include <functional>
 
 using namespace DirectX;
@@ -52,13 +53,13 @@ static void MakeBindLocalInModel(Model& model)
         XMMATRIX loc;
         if (p >= 0) {
             XMMATRIX gp = XMLoadFloat4x4(&globalBind[p]);
-            // ✅ row-vector: local = childGlobal * inverse(parentGlobal)
+            // ??row-vector: local = childGlobal * inverse(parentGlobal)
             loc = g * XMMatrixInverse(nullptr, gp);
         }
         else {
-            loc = g; // 루트: parent = I → local = global
+            loc = g; // 猷⑦듃: parent = I ??local = global
         }
-        XMStoreFloat4x4(&bones[i].BindTransform, loc); // 이제 '로컬 바인드'
+        XMStoreFloat4x4(&bones[i].BindTransform, loc); // ?댁젣 '濡쒖뺄 諛붿씤??
     }
     */
 
@@ -79,7 +80,7 @@ namespace
 
     int GetOrCreateBoneIndex(Model* model, const std::string& name, const aiBone* bone)
     {
-        // 정규화된 이름으로 통일
+        // ?뺢퇋?붾맂 ?대쫫?쇰줈 ?듭씪
         std::string normName = NormalizeBoneName(name);
 
         auto it = model->BoneNameToIndex.find(normName);
@@ -87,7 +88,7 @@ namespace
             return it->second;
 
         ModelBone newBone;
-        newBone.Name = normName;      // 디버깅용으로도 정규화된 이름 사용
+        newBone.Name = normName;      // ?붾쾭源낆슜?쇰줈???뺢퇋?붾맂 ?대쫫 ?ъ슜
         newBone.ParentIndex = -1;
         newBone.Offset = ToXMFLOAT4X4(bone->mOffsetMatrix);
         XMStoreFloat4x4(&newBone.BindTransform, XMMatrixIdentity());
@@ -103,7 +104,7 @@ namespace
 Model* FBXLoader::Load(const std::string& filePath) {
     Assimp::Importer importer;
 
-    // aiProcess_ConvertToLeftHanded: DirectX는 왼손 좌표계를 사용하므로 변환
+    // aiProcess_ConvertToLeftHanded: DirectX???쇱넀 醫뚰몴怨꾨? ?ъ슜?섎?濡?蹂??
     const aiScene* scene = importer.ReadFile(filePath,
         aiProcess_Triangulate |
         aiProcess_ConvertToLeftHanded |
@@ -115,7 +116,7 @@ Model* FBXLoader::Load(const std::string& filePath) {
         return nullptr;
     }
 
-    // 디렉토리 경로 추출 (Windows와 Unix 모두 지원)
+    // ?붾젆?좊━ 寃쎈줈 異붿텧 (Windows? Unix 紐⑤몢 吏??
     size_t lastSlash = filePath.find_last_of("/\\");
     if (lastSlash != std::string::npos) {
         m_Directory = filePath.substr(0, lastSlash);
@@ -129,7 +130,7 @@ Model* FBXLoader::Load(const std::string& filePath) {
     ProcessMaterials(scene, model.get());
     ProcessNode(scene->mRootNode, scene, model.get());
 
-    // 메시들을 전부 훑은 뒤에 본 계층 + 애니메이션 처리
+    // 硫붿떆?ㅼ쓣 ?꾨? ?묒? ?ㅼ뿉 蹂?怨꾩링 + ?좊땲硫붿씠??泥섎━
     BuildSkeletonHierarchy(scene, model.get());
 
     std::vector<DirectX::XMMATRIX> globalBind(model->Bones.size());
@@ -137,7 +138,7 @@ Model* FBXLoader::Load(const std::string& filePath) {
         DirectX::XMMATRIX off = DirectX::XMLoadFloat4x4(&model->Bones[i].Offset);
         globalBind[i] = DirectX::XMMatrixInverse(nullptr, off);
     }
-    // 각 본의 로컬 바인드 행렬 계산 (자식 글로벌 * 부모 글로벌 역행렬)
+    // 媛?蹂몄쓽 濡쒖뺄 諛붿씤???됰젹 怨꾩궛 (?먯떇 湲濡쒕쾶 * 遺紐?湲濡쒕쾶 ??뻾??
     for (size_t i = 0; i < model->Bones.size(); ++i) {
         int parentIndex = model->Bones[i].ParentIndex;
         DirectX::XMMATRIX g = globalBind[i];
@@ -149,10 +150,10 @@ Model* FBXLoader::Load(const std::string& filePath) {
 
     ProcessAnimations(scene, model.get());
 
-    // 이 함수 하나가 BindTransform(로컬 바인드)을 책임지게 둔다
+    // ???⑥닔 ?섎굹媛 BindTransform(濡쒖뺄 諛붿씤????梨낆엫吏寃??붾떎
     MakeBindLocalInModel(*model);
 
-    // 디버그: 본 목록 출력
+    // ?붾쾭洹? 蹂?紐⑸줉 異쒕젰
     for (size_t i = 0; i < model->Bones.size(); ++i) {
         DebugPrint("[Bones] %zu : name='%s', parent=%d\n",
             i,
@@ -172,12 +173,12 @@ Model* FBXLoader::Load(const std::string& filePath) {
 }
 
 void FBXLoader::ProcessNode(aiNode* node, const aiScene* scene, Model* outModel) {
-    // 현재 노드에 속한 모든 메시를 처리
+    // ?꾩옱 ?몃뱶???랁븳 紐⑤뱺 硫붿떆瑜?泥섎━
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
         outModel->Meshes.push_back(std::unique_ptr<Mesh>(ProcessMesh(mesh, scene, outModel)));
     }
-    // 자식 노드들을 재귀적으로 방문
+    // ?먯떇 ?몃뱶?ㅼ쓣 ?ш??곸쑝濡?諛⑸Ц
     for (unsigned int i = 0; i < node->mNumChildren; i++) {
         ProcessNode(node->mChildren[i], scene, outModel);
     }
@@ -187,7 +188,7 @@ Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel
     std::vector<ModelVertex> vertices;
     std::vector<uint32_t> indices;
 
-    // 1. 정점 데이터(Vertex Data)를 순회하며 추출
+    // 1. ?뺤젏 ?곗씠??Vertex Data)瑜??쒗쉶?섎ŉ 異붿텧
     for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
         ModelVertex v;
         v.Pos = { mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z };
@@ -196,27 +197,27 @@ Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel
             v.Normal = { mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z };
         }
         else {
-            v.Normal = { 0.0f, 1.0f, 0.0f }; // 법선이 없을 경우 임시 값
+            v.Normal = { 0.0f, 1.0f, 0.0f }; // 踰뺤꽑???놁쓣 寃쎌슦 ?꾩떆 媛?
         }
 
-        // Assimp는 여러 개의 텍스처 좌표 채널을 지원. 보통 첫 번째(0) 채널을 사용.
+        // Assimp???щ윭 媛쒖쓽 ?띿뒪泥?醫뚰몴 梨꾨꼸??吏?? 蹂댄넻 泥?踰덉㎏(0) 梨꾨꼸???ъ슜.
         if (mesh->mTextureCoords[0]) {
             v.TexC = { mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y };
         }
         else {
-            v.TexC = { 0.0f, 0.0f }; // 텍스처 좌표가 없을 경우
+            v.TexC = { 0.0f, 0.0f }; // ?띿뒪泥?醫뚰몴媛 ?놁쓣 寃쎌슦
         }
         vertices.push_back(v);
     }
 
-    // --- 추가: 스켈레탈 본 웨이트 추출 ---
+    // --- 異붽?: ?ㅼ펷?덊깉 蹂??⑥씠??異붿텧 ---
     ExtractBoneWeights(mesh, outModel, vertices);
 
-    // 2. 인덱스 데이터(Index Data)를 순회하며 추출
+    // 2. ?몃뜳???곗씠??Index Data)瑜??쒗쉶?섎ŉ 異붿텧
     for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
         aiFace face = mesh->mFaces[i];
-        // aiProcess_Triangulate 플래그를 사용했으므로, 폴리곤은 삼각형으로 변환됨.
-        // 하지만 라인이나 포인트가 포함될 수 있으므로 3개인 경우만 처리.
+        // aiProcess_Triangulate ?뚮옒洹몃? ?ъ슜?덉쑝誘濡? ?대━怨ㅼ? ?쇨컖?뺤쑝濡?蹂?섎맖.
+        // ?섏?留??쇱씤?대굹 ?ъ씤?멸? ?ы븿?????덉쑝誘濡?3媛쒖씤 寃쎌슦留?泥섎━.
         if (face.mNumIndices != 3) continue;
 
         for (unsigned int j = 0; j < face.mNumIndices; j++) {
@@ -224,20 +225,20 @@ Mesh* FBXLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Model* outModel
         }
     }
 
-    // 3. 추출한 데이터로 엔진의 Mesh 객체 생성
+    // 3. 異붿텧???곗씠?곕줈 ?붿쭊??Mesh 媛앹껜 ?앹꽦
     Mesh* newMesh = new Mesh();
     newMesh->Name = mesh->mName.C_Str();
     newMesh->IndexCount = (UINT)indices.size();
     newMesh->MatIndex = mesh->mMaterialIndex;
     
-    // CPU 데이터 저장 (Entity 변환 시 사용)
+    // CPU ?곗씠?????(Entity 蹂?????ъ슜)
     newMesh->Vertices = std::move(vertices);
     newMesh->Indices = std::move(indices);
 
-    // TODO: 아래 부분은 엔진의 D3D12 리소스 관리 시스템과 연동해야 합니다.
-    // -- 버퍼 생성 코드 (D3D12 리소스 생성 함수 사용) --
-    // 이 함수들은 CPU의 데이터를 GPU 메모리로 복사하는 역할을 합니다.
-    // GPU 버퍼는 Entity로 변환할 때 RenderSystem에서 생성됩니다.
+    // TODO: ?꾨옒 遺遺꾩? ?붿쭊??D3D12 由ъ냼??愿由??쒖뒪?쒓낵 ?곕룞?댁빞 ?⑸땲??
+    // -- 踰꾪띁 ?앹꽦 肄붾뱶 (D3D12 由ъ냼???앹꽦 ?⑥닔 ?ъ슜) --
+    // ???⑥닔?ㅼ? CPU???곗씠?곕? GPU 硫붾え由щ줈 蹂듭궗?섎뒗 ??븷???⑸땲??
+    // GPU 踰꾪띁??Entity濡?蹂?섑븷 ??RenderSystem?먯꽌 ?앹꽦?⑸땲??
     //
     // const UINT vbByteSize = (UINT)newMesh->Vertices.size() * sizeof(ModelVertex);
     // newMesh->VertexBuffer = GameEngine::GetRenderer()->CreateVertexBuffer(newMesh->Vertices.data(), vbByteSize);
@@ -259,16 +260,16 @@ void FBXLoader::ProcessMaterials(const aiScene* scene, Model* outModel) {
 
         material->Name = mat->GetName().C_Str();
 
-        // Diffuse 텍스처 경로를 가져옴
         aiString texPath;
         if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
             std::string fullTexPath = m_Directory + "/" + texPath.C_Str();
+            material->DiffuseTextureName = std::filesystem::path(fullTexPath).stem().string();
+        }
 
-            // TODO: 아래는 텍스처를 로드하고 SRV를 생성하는 부분입니다.
-            // 이 로직은 텍스처 리소스를 관리하는 별도의 'TextureManager'에서 처리하는 것이 이상적입니다.
-            //
-            // int srvIndex = GameEngine::GetTextureManager()->LoadTexture(fullTexPath);
-            // material->DiffuseSrvHeapIndex = srvIndex;
+        if (mat->GetTexture(aiTextureType_NORMALS, 0, &texPath) == AI_SUCCESS ||
+            mat->GetTexture(aiTextureType_HEIGHT, 0, &texPath) == AI_SUCCESS) {
+            std::string fullTexPath = m_Directory + "/" + texPath.C_Str();
+            material->NormalTextureName = std::filesystem::path(fullTexPath).stem().string();
         }
 
         outModel->Materials[i] = std::move(material);
@@ -287,7 +288,7 @@ void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<Mo
         }
     }
 
-    // aiMesh::mBones 를 돌면서 각 정점에 본 인덱스/웨이트 할당
+    // aiMesh::mBones 瑜??뚮㈃??媛??뺤젏??蹂??몃뜳???⑥씠???좊떦
     for (unsigned int i = 0; i < mesh->mNumBones; ++i) {
         aiBone* aiBonePtr = mesh->mBones[i];
         std::string boneName = aiBonePtr->mName.C_Str();
@@ -304,7 +305,7 @@ void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<Mo
 
             auto& v = vertices[vertexId];
 
-            // 4개 슬롯 중 빈 자리 또는 가장 작은 웨이트를 교체
+            // 4媛??щ’ 以?鍮??먮━ ?먮뒗 媛???묒? ?⑥씠?몃? 援먯껜
             int slot = -1;
             float minWeight = weight;
             int minIndex = 0;
@@ -321,7 +322,7 @@ void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<Mo
             }
 
             if (slot == -1) {
-                // 이미 4개 꽉 찼으면 가장 작은 웨이트를 교체
+                // ?대? 4媛?苑?李쇱쑝硫?媛???묒? ?⑥씠?몃? 援먯껜
                 slot = minIndex;
             }
 
@@ -330,7 +331,7 @@ void FBXLoader::ExtractBoneWeights(aiMesh* mesh, Model* outModel, std::vector<Mo
         }
     }
 
-    // 정규화 (총합이 1이 되도록)
+    // ?뺢퇋??(珥앺빀??1???섎룄濡?
     for (auto& v : vertices) {
         float sum =
             v.BoneWeights[0] + v.BoneWeights[1] +
@@ -350,7 +351,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
     if (!outModel || outModel->Bones.empty())
         return;
 
-    // 1) 일단 전부 루트(-1)로 초기화
+    // 1) ?쇰떒 ?꾨? 猷⑦듃(-1)濡?珥덇린??
     for (auto& b : outModel->Bones)
         b.ParentIndex = -1;
 
@@ -368,10 +369,10 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         const std::string& n = bone.Name;
         std::string parentName;
 
-        // --- 루트 / 몸통 ---
+        // --- 猷⑦듃 / 紐명넻 ---
         if (n == "hips")
         {
-            parentName.clear();  // 최종 루트
+            parentName.clear();  // 理쒖쥌 猷⑦듃
         }
         else if (n == "spine")
             parentName = "hips";
@@ -386,7 +387,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         else if (n == "headtop_end")
             parentName = "head";
 
-        // --- 왼쪽 팔 ---
+        // --- ?쇱そ ??---
         else if (n == "leftshoulder")
             parentName = "spine2";
         else if (n == "leftarm")
@@ -396,7 +397,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         else if (n == "lefthand")
             parentName = "leftforearm";
 
-        // --- 오른쪽 팔 ---
+        // --- ?ㅻⅨ履???---
         else if (n == "rightshoulder")
             parentName = "spine2";
         else if (n == "rightarm")
@@ -406,7 +407,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         else if (n == "righthand")
             parentName = "rightforearm";
 
-        // --- 왼쪽 다리 ---
+        // --- ?쇱そ ?ㅻ━ ---
         else if (n == "leftupleg")
             parentName = "hips";
         else if (n == "leftleg")
@@ -418,7 +419,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         else if (n == "lefttoe_end")
             parentName = "lefttoebase";
 
-        // --- 오른쪽 다리 ---
+        // --- ?ㅻⅨ履??ㅻ━ ---
         else if (n == "rightupleg")
             parentName = "hips";
         else if (n == "rightleg")
@@ -430,10 +431,10 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         else if (n == "righttoe_end")
             parentName = "righttoebase";
 
-        // --- 손가락 (공통 규칙) ---
+        // --- ?먭???(怨듯넻 洹쒖튃) ---
         else
         {
-            // 이름이 xxx1, xxx2, xxx3, xxx4 패턴인 경우
+            // ?대쫫??xxx1, xxx2, xxx3, xxx4 ?⑦꽩??寃쎌슦
             if (!n.empty())
             {
                 char last = n.back();
@@ -446,7 +447,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
                 }
                 else if (last == '1')
                 {
-                    // *_1 의 부모는 해당 손(lefthand / righthand)
+                    // *_1 ??遺紐⑤뒗 ?대떦 ??lefthand / righthand)
                     if (n.rfind("lefthand", 0) == 0)
                         parentName = "lefthand";
                     else if (n.rfind("righthand", 0) == 0)
@@ -465,7 +466,7 @@ void FBXLoader::BuildSkeletonHierarchy(const aiScene* /*scene*/, Model* outModel
         }
     }
 
-    // (디버그용) 한 번 더 찍어보고 hips / spine / 다리 계층이 제대로 나오는지 확인
+    // (?붾쾭洹몄슜) ??踰???李띿뼱蹂닿퀬 hips / spine / ?ㅻ━ 怨꾩링???쒕?濡??섏삤?붿? ?뺤씤
 }
 
 
@@ -490,7 +491,7 @@ void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
         clip.Duration = anim->mDuration;
         clip.TicksPerSecond = (anim->mTicksPerSecond != 0.0)
             ? anim->mTicksPerSecond
-            : 25.0; // 기본값
+            : 25.0; // 湲곕낯媛?
 
         clip.BoneAnimations.clear();
         clip.BoneAnimations.resize(outModel->Bones.size());
@@ -502,7 +503,7 @@ void FBXLoader::ProcessAnimations(const aiScene* scene, Model* outModel)
 
             int boneIndex = outModel->GetBoneIndex(channelName);
             if (boneIndex < 0) {
-                // 디버깅용으로 보고 싶으면 여기서 OutputDebugString 써도 됨
+                // ?붾쾭源낆슜?쇰줈 蹂닿퀬 ?띠쑝硫??ш린??OutputDebugString ?⑤룄 ??
                 DebugPrint("[Anim] channel '%s' (norm='%s') -> bone NOT FOUND\n",
                     channelNameRaw.c_str(), channelName.c_str());
                 continue;

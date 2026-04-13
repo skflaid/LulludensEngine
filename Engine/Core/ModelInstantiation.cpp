@@ -7,7 +7,7 @@
 
 #include "Renderer/Model.h"
 
-// 어디든 접근 쉬운 cpp에 정적 함수로 두면 편함 (예: ModelInstantiation.cpp 상단에)
+// ?대뵒???묎렐 ?ъ슫 cpp???뺤쟻 ?⑥닔濡??먮㈃ ?명븿 (?? ModelInstantiation.cpp ?곷떒??
 static void RebuildBindLocal(class SkeletonComponent* skeleton)
 {
     using namespace DirectX;
@@ -35,9 +35,9 @@ static void RebuildBindLocal(class SkeletonComponent* skeleton)
             loc = invGp * g;
         }
         else {
-            loc = g; // 루트는 글로벌=로컬
+            loc = g; // 猷⑦듃??湲濡쒕쾶=濡쒖뺄
         }
-        // 이제 BindTransform에는 "로컬 바인드"를 저장
+        // ?댁젣 BindTransform?먮뒗 "濡쒖뺄 諛붿씤??瑜????
         XMStoreFloat4x4(&skeleton->Bones[i].BindTransform, loc);
     }
 }
@@ -53,14 +53,8 @@ namespace ModelInstantiation {
             return false;
         }
 
-        // MaterialComponent 처리 (첫 번째 재질 사용)
-        if (!model->Materials.empty() && model->Materials[0]) {
-            MaterialComponent* matComp = entity->AddComponent<MaterialComponent>();
-            // Material의 이름이나 다른 속성은 현재 MaterialComponent에 없으므로
-            // 기본값으로 설정됩니다. 필요시 MaterialComponent를 확장할 수 있습니다.
-        }
+        entity->AddComponent<MaterialComponent>();
 
-        // --- 스켈레톤 / 애니메이션 컴포넌트 생성 ---
         if (!model->Bones.empty()) {
             SkeletonComponent* skeleton = entity->AddComponent<SkeletonComponent>();
             skeleton->Bones = model->Bones;
@@ -71,7 +65,7 @@ namespace ModelInstantiation {
 
         if (!model->Animations.empty()) {
             SkeletalAnimationComponent* anim = entity->AddComponent<SkeletalAnimationComponent>();
-            anim->CurrentClipName = model->Animations[0].Name;  // 첫 번째 클립 자동 재생
+            anim->CurrentClipName = model->Animations[0].Name;
             anim->CurrentTime = 0.0f;
             anim->PlayRate = 1.0f;
             anim->Loop = true;
@@ -79,22 +73,32 @@ namespace ModelInstantiation {
         }
 
         if (mergeAllMeshes) {
-            // 모든 메시를 하나의 MeshComponent로 병합
             MeshComponent* meshComp = entity->AddComponent<MeshComponent>();
-            
             uint32_t baseVertexOffset = 0;
-            
+
             for (const auto& mesh : model->Meshes) {
                 if (!mesh) continue;
-                
-                // Vertex 변환: ModelVertex -> MeshComponent::Vertex
+
+                SubmeshTextureBinding submeshBinding;
+                submeshBinding.meshName = mesh->Name.empty()
+                    ? "Mesh" + std::to_string(meshComp->submeshes.size())
+                    : mesh->Name;
+                submeshBinding.startIndex = static_cast<uint32_t>(meshComp->indices.size());
+                submeshBinding.indexCount = static_cast<uint32_t>(mesh->Indices.size());
+
+                if (mesh->MatIndex >= 0 &&
+                    mesh->MatIndex < static_cast<int>(model->Materials.size()) &&
+                    model->Materials[mesh->MatIndex]) {
+                    submeshBinding.albedoTextureName = model->Materials[mesh->MatIndex]->DiffuseTextureName;
+                    submeshBinding.normalTextureName = model->Materials[mesh->MatIndex]->NormalTextureName;
+                }
+
                 for (const auto& modelVertex : mesh->Vertices) {
-                    ::Vertex meshCompVertex; // MeshComponent의 Vertex 사용
+                    ::Vertex meshCompVertex{};
                     meshCompVertex.position = modelVertex.Pos;
                     meshCompVertex.normal = modelVertex.Normal;
                     meshCompVertex.texCoord = modelVertex.TexC;
 
-                    // 본 인덱스 / 가중치 복사 ---
                     for (int i = 0; i < 4; ++i) {
                         meshCompVertex.boneIndices[i] = modelVertex.BoneIndices[i];
                         meshCompVertex.boneWeights[i] = modelVertex.BoneWeights[i];
@@ -102,38 +106,38 @@ namespace ModelInstantiation {
 
                     meshComp->vertices.push_back(meshCompVertex);
                 }
-                
-                // Index 변환 (baseVertexOffset 추가)
+
                 for (uint32_t index : mesh->Indices) {
                     meshComp->indices.push_back(baseVertexOffset + index);
                 }
-                
+
+                meshComp->submeshes.push_back(std::move(submeshBinding));
                 baseVertexOffset += static_cast<uint32_t>(mesh->Vertices.size());
             }
-            
+
+            if (meshComp->submeshes.empty()) {
+                meshComp->submeshes.push_back({ "Mesh", 0u, static_cast<uint32_t>(meshComp->indices.size()), "", "" });
+            }
+
             meshComp->isLoaded = true;
         }
         else {
-            // 각 메시마다 별도의 MeshComponent 생성
+            MeshComponent* meshComp = entity->AddComponent<MeshComponent>();
+
             for (const auto& mesh : model->Meshes) {
                 if (!mesh) continue;
-                
-                MeshComponent* meshComp = entity->AddComponent<MeshComponent>();
-                
-                // Vertex 변환: ModelVertex -> MeshComponent::Vertex
+
                 for (const auto& modelVertex : mesh->Vertices) {
-                    ::Vertex meshCompVertex{};                   // 전체 0으로 초기화
+                    ::Vertex meshCompVertex{};
                     meshCompVertex.position = modelVertex.Pos;
                     meshCompVertex.normal = modelVertex.Normal;
                     meshCompVertex.texCoord = modelVertex.TexC;
 
-                    // 본/가중치 복사 (모델에서 가져온 만큼만 유효)
                     for (int i = 0; i < 4; ++i) {
                         meshCompVertex.boneIndices[i] = modelVertex.BoneIndices[i];
                         meshCompVertex.boneWeights[i] = modelVertex.BoneWeights[i];
                     }
 
-                    // 가중치 정규화 + 디폴트 보정
                     float s = meshCompVertex.boneWeights[0] + meshCompVertex.boneWeights[1]
                         + meshCompVertex.boneWeights[2] + meshCompVertex.boneWeights[3];
 
@@ -142,7 +146,6 @@ namespace ModelInstantiation {
                         for (int i = 0; i < 4; ++i) meshCompVertex.boneWeights[i] *= inv;
                     }
                     else {
-                        // 어떤 이유로든 전부 0이면 루트 본 하나만 영향 주도록
                         meshCompVertex.boneIndices[0] = 0;
                         meshCompVertex.boneWeights[0] = 1.0f;
                         for (int i = 1; i < 4; ++i) {
@@ -153,12 +156,35 @@ namespace ModelInstantiation {
 
                     meshComp->vertices.push_back(meshCompVertex);
                 }
-                
-                // Index 복사
-                meshComp->indices = mesh->Indices;
-                
-                meshComp->isLoaded = true;
+
+                uint32_t startIndex = static_cast<uint32_t>(meshComp->indices.size());
+                uint32_t baseVertexOffset = static_cast<uint32_t>(meshComp->vertices.size() - mesh->Vertices.size());
+                for (uint32_t index : mesh->Indices) {
+                    meshComp->indices.push_back(baseVertexOffset + index);
+                }
+
+                SubmeshTextureBinding submeshBinding;
+                submeshBinding.meshName = mesh->Name.empty()
+                    ? "Mesh" + std::to_string(meshComp->submeshes.size())
+                    : mesh->Name;
+                submeshBinding.startIndex = startIndex;
+                submeshBinding.indexCount = static_cast<uint32_t>(mesh->Indices.size());
+
+                if (mesh->MatIndex >= 0 &&
+                    mesh->MatIndex < static_cast<int>(model->Materials.size()) &&
+                    model->Materials[mesh->MatIndex]) {
+                    submeshBinding.albedoTextureName = model->Materials[mesh->MatIndex]->DiffuseTextureName;
+                    submeshBinding.normalTextureName = model->Materials[mesh->MatIndex]->NormalTextureName;
+                }
+
+                meshComp->submeshes.push_back(std::move(submeshBinding));
             }
+
+            if (meshComp->submeshes.empty()) {
+                meshComp->submeshes.push_back({ "Mesh", 0u, static_cast<uint32_t>(meshComp->indices.size()), "", "" });
+            }
+
+            meshComp->isLoaded = true;
         }
 
         return true;

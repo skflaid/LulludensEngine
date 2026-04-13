@@ -1,6 +1,6 @@
 #pragma once
 #include "IComponent.h"
-#include "Physics/Components/ColliderComponent.h" // Áß¿ä: ÀÌ Çì´õ¸¦ Æ÷ÇÔÇØ¾ß ÇÕ´Ï´Ù.
+#include "Physics/Components/ColliderComponent.h" // ì¤‘ìš”: ì´ í—¤ë”ë¥¼ í¬í•¨í•´ì•¼ í•©ë‹ˆë‹¤.
 #include <vector>
 #include <unordered_map>
 #include <memory>
@@ -40,10 +40,10 @@ public:
         return m_Components.find(std::type_index(typeid(T))) != m_Components.end();
     }
 
-    // ÀÌ ¸Ş¼­µå´Â Entity°¡ °¡Áø ÄÄÆ÷³ÍÆ® Áß ColliderComponent ÆÄ»ı Å¬·¡½º¸¦ Ã£¾Æ ¹İÈ¯ÇÕ´Ï´Ù.
+    // ì´ ë©”ì„œë“œëŠ” Entityê°€ ê°€ì§„ ì»´í¬ë„ŒíŠ¸ ì¤‘ ColliderComponent íŒŒìƒ í´ë˜ìŠ¤ë¥¼ ì°¾ì•„ ë°˜í™˜í•©ë‹ˆë‹¤.
     ColliderComponent* GetCollider() {
         for (const auto& pair : m_Components) {
-            // pair.first´Â type_index, pair.second´Â unique_ptr<IComponent>
+            // pair.firstëŠ” type_index, pair.secondëŠ” unique_ptr<IComponent>
             auto& component = pair.second;
 
             ColliderComponent* collider = dynamic_cast<ColliderComponent*>(component.get());

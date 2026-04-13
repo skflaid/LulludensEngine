@@ -14,28 +14,28 @@ class EntityInspector
 public:
     bool Create(HWND hParent, HINSTANCE hInst);
     void Show(int nCmdShow);
-    void Update(GameEngine* engine); // ¸Å ÇÁ·¹ÀÓ È¤Àº ÇÊ¿ä½Ã È£Ãâ
+    void Update(GameEngine* engine); // ë§¤ í”„ë ˆì„ í˜¹ì€ í•„ìš”ì‹œ í˜¸ì¶œ
 
 private:
-    // À©µµ¿ì / ÄÁÆ®·Ñ
+    // ìœˆë„ìš° / ì»¨íŠ¸ë¡¤
     HWND m_hWnd = nullptr;
-    HWND m_hList = nullptr; // ¿£Æ¼Æ¼ ¸®½ºÆ®
+    HWND m_hList = nullptr; // ì—”í‹°í‹° ë¦¬ìŠ¤íŠ¸
     HWND m_hPosX = nullptr, m_hPosY = nullptr, m_hPosZ = nullptr;
     HWND m_hRotX = nullptr, m_hRotY = nullptr, m_hRotZ = nullptr;
     HWND m_hScaX = nullptr, m_hScaY = nullptr, m_hScaZ = nullptr;
 
-    int  m_LastSelection = -1;      // ¸®½ºÆ® ¼±ÅÃ ÀÎµ¦½º
-    uint64_t m_EntityCountCached = 0; // ¿£Æ¼Æ¼ ¼ö Ä³½Ã(º¯È­½Ã ¸®½ºÆ® °»½Å)
+    int  m_LastSelection = -1;      // ë¦¬ìŠ¤íŠ¸ ì„ íƒ ì¸ë±ìŠ¤
+    uint64_t m_EntityCountCached = 0; // ì—”í‹°í‹° ìˆ˜ ìºì‹œ(ë³€í™”ì‹œ ë¦¬ìŠ¤íŠ¸ ê°±ì‹ )
 
     void BuildUI(HINSTANCE hInst);
     void PopulateList(GameEngine* engine);
-    void UpdateFields(Entity* entity); // ¼±ÅÃ ¿£Æ¼Æ¼ÀÇ Æ®·£½ºÆû °»½Å
+    void UpdateFields(Entity* entity); // ì„ íƒ ì—”í‹°í‹°ì˜ íŠ¸ëœìŠ¤í¼ ê°±ì‹ 
 
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     LRESULT HandleMessage(UINT, WPARAM, LPARAM);
 };
 
-// ÄÁÆ®·Ñ ID (define ¼±È£ÇÑ´Ù°í ÇØ¼­ ¸ÅÅ©·Î·Î Á¤ÀÇ)
+// ì»¨íŠ¸ë¡¤ ID (define ì„ í˜¸í•œë‹¤ê³  í•´ì„œ ë§¤í¬ë¡œë¡œ ì •ì˜)
 #define IDC_EI_LIST   1001
 #define IDC_EI_POSX   1101
 #define IDC_EI_POSY   1102

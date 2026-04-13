@@ -9,6 +9,7 @@ RendererCore::RendererCore()
     , m_RTVDescriptorSize(0)
     , m_GBufferRTVDescriptorSize(0)
     , m_GBufferSRVDescriptorSize(0)
+    , m_LightingRTVDescriptorSize(0)
     , m_SSGIRTVDescriptorSize(0)
     , m_SSGISRVDescriptorSize(0)
     , m_Width(0)
@@ -34,6 +35,7 @@ bool RendererCore::Initialize(HWND hwnd, uint32_t width, uint32_t height) {
         CreateRenderTargetViews();
         CreateDepthStencilBuffer();
         CreateGBuffer();
+        CreateLightingBuffer();
         CreateSSGIBuffer();
         CreateFence();
 
@@ -180,7 +182,7 @@ void RendererCore::CreateDepthStencilBuffer() {
 void RendererCore::CreateGBuffer() {
     // G-Buffer RTV Heap 생성 (4개 RT: Position, Normal, Albedo, Material)
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-    rtvHeapDesc.NumDescriptors = 4;
+    rtvHeapDesc.NumDescriptors = 5;
     rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_GBufferRTVHeap));
@@ -284,6 +286,63 @@ void RendererCore::CreateGBuffer() {
     );
     m_Device->CreateRenderTargetView(m_GBufferMaterial.Get(), nullptr, rtvHandle);
     m_Device->CreateShaderResourceView(m_GBufferMaterial.Get(), nullptr, srvHandle);
+    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
+
+    gbufferDesc.Format = DXGI_FORMAT_R32_FLOAT;
+    clearValue.Format = DXGI_FORMAT_R32_FLOAT;
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &gbufferDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_GBufferDepth)
+    );
+    m_Device->CreateRenderTargetView(m_GBufferDepth.Get(), nullptr, rtvHandle);
+}
+
+void RendererCore::CreateLightingBuffer() {
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+    rtvHeapDesc.NumDescriptors = 1;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_LightingRTVHeap));
+    m_LightingRTVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+    D3D12_RESOURCE_DESC lightingDesc = {};
+    lightingDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    lightingDesc.Width = m_Width;
+    lightingDesc.Height = m_Height;
+    lightingDesc.DepthOrArraySize = 1;
+    lightingDesc.MipLevels = 1;
+    lightingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    lightingDesc.SampleDesc.Count = 1;
+    lightingDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_CLEAR_VALUE clearValue = {};
+    clearValue.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    clearValue.Color[0] = 0.0f;
+    clearValue.Color[1] = 0.0f;
+    clearValue.Color[2] = 0.0f;
+    clearValue.Color[3] = 1.0f;
+
+    m_Device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &lightingDesc,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        &clearValue,
+        IID_PPV_ARGS(&m_LightingBuffer)
+    );
+
+    m_Device->CreateRenderTargetView(
+        m_LightingBuffer.Get(),
+        nullptr,
+        m_LightingRTVHeap->GetCPUDescriptorHandleForHeapStart()
+    );
 }
 
 void RendererCore::CreateSSGIBuffer() {
@@ -415,6 +474,16 @@ D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetGBufferSRVHandle(int index) const {
     return handle;
 }
 
+D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetLightingRTVHandle() const {
+    return m_LightingRTVHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE RendererCore::GetCurrentBackBufferRTV() const {
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = m_RTVHeap->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += m_FrameIndex * m_RTVDescriptorSize;
+    return handle;
+}
+
 void RendererCore::CreateFence() {
     m_Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_Fence));
 
@@ -487,6 +556,20 @@ void RendererCore::FlushCommandQueue() {
     
     // Fence 값 업데이트
     m_FenceValues[m_FrameIndex] = newFenceValue;
+}
+
+void RendererCore::ExecuteCommandListAndWait() {
+    m_CommandList->Close();
+
+    ID3D12CommandList* commandLists[] = { m_CommandList.Get() };
+    m_CommandQueue->ExecuteCommandLists(1, commandLists);
+
+    FlushCommandQueue();
+}
+
+void RendererCore::ResetCommandList() {
+    m_CommandAllocators[m_FrameIndex]->Reset();
+    m_CommandList->Reset(m_CommandAllocators[m_FrameIndex].Get(), nullptr);
 }
 
 void RendererCore::MoveToNextFrame() {

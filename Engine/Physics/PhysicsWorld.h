@@ -11,7 +11,7 @@ using namespace DirectX;
 
 class PhysicsWorld {
 public:
-    PhysicsWorld(); // »ı¼ºÀÚ ¼±¾ğ
+    PhysicsWorld(); // ìƒì„±ì ì„ ì–¸
     ~PhysicsWorld();
 
     void Initialize();
@@ -32,6 +32,6 @@ private:
     std::vector<Entity*> m_Entities;
     std::vector<std::unique_ptr<ISystem>> m_Systems;
 
-    XMFLOAT3 m_Gravity; // Áß·Â º¯¼ö
+    XMFLOAT3 m_Gravity; // ì¤‘ë ¥ ë³€ìˆ˜
     float m_FixedTimeStep;
 };
