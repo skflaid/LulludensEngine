@@ -50,10 +50,11 @@ void RenderSystem::Initialize() {
     
     InitializeTextures();
 
+    // CapstoneDesign에서 export한 ONNX 모델을 Lighting 이후에 연결한다.
     DirectMLStyleTransferSystem::Config styleConfig = {};
-    styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\reconet_style.onnx";
-    styleConfig.inputWidth = m_Width;
-    styleConfig.inputHeight = m_Height;
+    styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\net4.onnx";
+    styleConfig.inputWidth = 640;
+    styleConfig.inputHeight = 360;
     m_DirectMLStyleTransferSystem = std::make_unique<DirectMLStyleTransferSystem>(m_RendererCore.get(), styleConfig);
     m_DirectMLStyleTransferSystem->Initialize();
     
@@ -925,19 +926,22 @@ void RenderSystem::Render() {
     // G-Buffer Pass
     RenderGBufferPass(frameIndex);
 
-    // SSGI Pass (??긽 ?ㅽ뻾)
+    // SSGI Pass 
     RenderSSGIPass(frameIndex);
 
-    // SSGI Denoise Pass (SSGI 寃곌낵瑜??꾪꽣留?
+    // SSGI Denoise Pass 
     RenderSSGIDenoisePass(frameIndex);
 
-    // ?꾩옱 SSGI 寃곌낵瑜??댁쟾 ?꾨젅???띿뒪泥섎줈 蹂듭궗 (Temporal Filter??
+
     CopySSGIToPrevious(frameIndex);
 
-    // Lighting Pass (紐⑤뱶???곕씪 ?ㅻⅨ 寃곌낵 ?쒖떆)
+    // Lighting Pass
     RenderLightingPass(frameIndex);
 
-    if (m_DirectMLStyleTransferSystem && m_DirectMLStyleTransferSystem->Execute()) {
+    // 추론이 가능하면 스타일 결과를, 아니면 원본 lighting 결과를 바로 출력한다.
+    if (m_IsStyleTransferEnabled &&
+        m_DirectMLStyleTransferSystem &&
+        m_DirectMLStyleTransferSystem->Execute()) {
         CopyFrameToBackBuffer(m_DirectMLStyleTransferSystem->GetOutputTexture());
     }
     else {
@@ -1012,6 +1016,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
 
     // Transition G-Buffer to render target state
     // barrier 諛곗뿴????긽 珥덇린??(?섏쨷???ㅼ떆 ?ъ슜?섍린 ?꾪빐)
+    // Position/Normal/Albedo/Material/Depth 5개 MRT를 모두 render target 상태로 맞춘다.
     D3D12_RESOURCE_BARRIER barriers[5] = {};
     barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
@@ -1041,6 +1046,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     m_IsFirstGBufferFrame = false;
 
     // Set G-Buffer render targets
+    // 마지막 슬롯은 StyleTransfer 입력용 depth MRT다.
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs[5] = {
         m_RendererCore->GetGBufferRTVHandle(0),
         m_RendererCore->GetGBufferRTVHandle(1),
@@ -1107,6 +1113,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
 
 void RenderSystem::RenderLightingPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
+    // Lighting은 백버퍼가 아니라 별도 LightingBuffer에 먼저 기록한다.
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_RendererCore->GetLightingRTVHandle();
 
     if (!m_IsFirstLightingFrame) {
@@ -1149,6 +1156,7 @@ void RenderSystem::CopyFrameToBackBuffer(ID3D12Resource* sourceTexture) {
         return;
     }
 
+    // 최종 출력은 단순 CopyResource로 백버퍼에 써서 후속 present로 넘긴다.
     auto* commandList = m_RendererCore->GetCommandList();
     auto* backBuffer = m_RendererCore->GetCurrentBackBuffer();
 
@@ -1183,6 +1191,10 @@ void RenderSystem::ToggleRenderMode() {
         m_RenderMode = RenderMode::Composite;
         break;
     }
+}
+
+void RenderSystem::ToggleStyleTransfer() {
+    m_IsStyleTransferEnabled = !m_IsStyleTransferEnabled;
 }
 
 void RenderSystem::RenderSSGIPass(UINT frameIndex) {

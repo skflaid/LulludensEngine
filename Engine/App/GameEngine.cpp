@@ -78,6 +78,11 @@ void GameEngine::ToggleRenderMode()
     if (m_RenderSystem) m_RenderSystem->ToggleRenderMode();
 }
 
+void GameEngine::ToggleStyleTransfer()
+{
+    if (m_RenderSystem) m_RenderSystem->ToggleStyleTransfer();
+}
+
 void GameEngine::Shutdown()
 {
     if (m_RenderSystem) { m_RenderSystem->Shutdown(); m_RenderSystem.reset(); }
@@ -129,6 +134,7 @@ void GameEngine::CreateEntities()
         cube->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
         cube->AddComponent<MeshComponent>()->CreateCube();
         cube->AddComponent<MaterialComponent>()->SetAlbedo(0.8f, 0.3f, 0.3f);
+        cube->GetComponent<MaterialComponent>()->albedoTextureName = "checkboard";
 
         m_PhysicsWorld->RegisterEntity(cube.get());
         m_RenderSystem->RegisterEntity(cube.get());
@@ -154,8 +160,8 @@ void GameEngine::CreateEntities()
 
     // FBX 모델 로드 예제
     // 주의: 실제 FBX 파일 경로로 변경해야 합니다.
-    //LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f, true);
-    //LoadFBXModel("Models/Dancing Twerk.fbx", 1, 0.0f, 0.0f, 0.0f, 0.05f, false);
+    LoadFBXModel("Models/Nissan 180SX S13 (1992).fbx", 3, 90.0f, 45.0f, 0.0f, true);
+    LoadFBXModel("Models/Dancing Twerk.fbx", 1, 0.0f, 0.0f, 0.0f, 0.05f, false);
 }
 
 void GameEngine::LoadFBXModel(const std::string& filePath, uint32_t entityId,

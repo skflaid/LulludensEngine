@@ -73,6 +73,7 @@ struct VertexOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float2 TexC : TEXCOORD;
+    // StyleTransfer 입력으로 넘길 view-space depth.
     float ViewDepth : TEXCOORD1;
 };
 

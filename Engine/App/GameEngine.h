@@ -37,6 +37,7 @@ public:
 
     // 렌더링 모드 토글
     void ToggleRenderMode();
+    void ToggleStyleTransfer();
 
     //카메라 관련 함수
     void SetMainCamera(Entity* camera);

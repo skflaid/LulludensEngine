@@ -22,11 +22,15 @@ enum class RenderMode {
 
 class RenderSystem : public ISystem {
 public:
+    // 엔진/창 정보와 렌더 해상도를 받아 deferred renderer를 구성한다.
     RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32_t height);
     ~RenderSystem();
 
+    // 렌더 코어, 파이프라인 상태, 스타일 트랜스퍼 시스템을 초기화한다.
     void Initialize() override;
+    // 현재 렌더 시스템은 별도 게임 로직 업데이트 없이 패스 실행 준비만 담당한다.
     void Update(float deltaTime) override;
+    // 상수 버퍼와 하위 시스템을 정리한다.
     void Shutdown() override;
 
     uint32_t GetWidth() const { return m_Width; }
@@ -37,18 +41,29 @@ public:
     void RegisterEntity(Entity* entity);
     void UnregisterEntity(Entity* entity);
 
+    // 한 프레임의 그림자/GBuffer/SSGI/Lighting/StyleTransfer 흐름을 실행한다.
     void Render();
+    // Composite/Lighting/SSGI 디버그 표시 모드를 순환한다.
     void ToggleRenderMode();
+    void ToggleStyleTransfer();
     RenderMode GetRenderMode() const { return m_RenderMode; }
 
 private:
+    // 지오메트리를 여러 MRT에 기록하는 G-Buffer 패스.
     void RenderGBufferPass(UINT frameIndex);
+    // 조명 결과를 오프스크린 LightingBuffer에 출력하는 패스.
     void RenderLightingPass(UINT frameIndex);
+    // 간단한 SSGI 계산 패스.
     void RenderSSGIPass(UINT frameIndex);
+    // SSGI 결과를 정리하는 denoise 패스.
     void RenderSSGIDenoisePass(UINT frameIndex);
+    // temporal filter를 위해 현재 SSGI 결과를 이전 프레임 버퍼로 복사한다.
     void CopySSGIToPrevious(UINT frameIndex);
+    // Lighting 또는 StyleTransfer 결과를 백버퍼로 복사한다.
     void CopyFrameToBackBuffer(ID3D12Resource* sourceTexture);
+    // 실제 메시 엔티티 1개를 G-Buffer 패스에 그린다.
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
+    // 카메라/라이트/그림자/모드 상수를 프레임 CB에 채운다.
     void UpdatePassConstants(UINT frameIndex);
 
     void RenderShadowPass(UINT frameIndex);
@@ -65,7 +80,9 @@ private:
 private:
     GameEngine* m_Engine = nullptr; // GameEngine 포인터 멤버
 
+    // 스왑체인/GBuffer/오프스크린 버퍼를 소유하는 저수준 렌더 코어.
     std::unique_ptr<RendererCore> m_RendererCore;
+    // Lighting 이후 화면 스타일 추론을 담당하는 후처리 시스템.
     std::unique_ptr<DirectMLStyleTransferSystem> m_DirectMLStyleTransferSystem;
     std::vector<Entity*> m_RenderableEntities;
     HWND m_Hwnd;
@@ -108,7 +125,9 @@ private:
     bool m_IsFirstSSGIFrame = true;
     // First frame flag for G-Buffer barrier
     bool m_IsFirstGBufferFrame = true;
+    // LightingBuffer가 첫 프레임 이후 COPY_SOURCE -> RENDER_TARGET 전환이 필요한지 추적한다.
     bool m_IsFirstLightingFrame = true;
+    bool m_IsStyleTransferEnabled = true;
 
     // Constant buffers
     static const int FrameCount = 2;

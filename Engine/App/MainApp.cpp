@@ -24,6 +24,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             // I키를 눌렀을 때 렌더링 모드 토글
             g_Engine.ToggleRenderMode();
         }
+        else if (wParam == 'O' || wParam == 'o') {
+            g_Engine.ToggleStyleTransfer();
+        }
         else if (wParam == VK_ESCAPE) {
             // ESC키로 마우스 해제
             InputManager::Get()->ReleaseMouse();

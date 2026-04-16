@@ -5,60 +5,101 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cstring>
 #include <filesystem>
+#include <sstream>
+#include <stdexcept>
 
 using Microsoft::WRL::ComPtr;
 
 namespace
 {
-    // 8bit UNORM 색상 채널을 0~1 float로 정규화한다.
+    void DebugLogA(const std::string& message)
+    {
+        OutputDebugStringA(message.c_str());
+    }
+
+    void DebugLogW(const std::wstring& message)
+    {
+        OutputDebugStringW(message.c_str());
+    }
+
     float NormalizeByte(uint8_t value)
     {
         return static_cast<float>(value) / 255.0f;
     }
 
-    // 0~1 float 채널 값을 8bit UNORM으로 변환한다.
     uint8_t FloatToByte(float value)
     {
         const float clamped = std::clamp(value, 0.0f, 1.0f);
         return static_cast<uint8_t>(clamped * 255.0f + 0.5f);
     }
+
+    uint32_t ClampCoord(uint32_t value, uint32_t maxExclusive)
+    {
+        return (maxExclusive == 0) ? 0u : (std::min)(value, maxExclusive - 1);
+    }
+
+    uint32_t SampleSourceCoord(uint32_t dstCoord, uint32_t dstExtent, uint32_t srcExtent)
+    {
+        if (dstExtent == 0 || srcExtent == 0) {
+            return 0;
+        }
+
+        const float uv = (static_cast<float>(dstCoord) + 0.5f) / static_cast<float>(dstExtent);
+        const uint32_t srcCoord = static_cast<uint32_t>(uv * static_cast<float>(srcExtent));
+        return ClampCoord(srcCoord, srcExtent);
+    }
 }
 
-// 렌더러와 설정을 받아 스타일 트랜스퍼 시스템을 구성한다.
 DirectMLStyleTransferSystem::DirectMLStyleTransferSystem(RendererCore* rendererCore, Config config)
     : m_RendererCore(rendererCore), m_Config(std::move(config))
 {
 }
 
-// 해상도에 맞는 출력 텍스처/스테이징 버퍼를 만들고 DirectML 백엔드를 연다.
 void DirectMLStyleTransferSystem::Initialize()
 {
     if (m_Config.modelPath.empty()) {
         m_Config.modelPath = GetDefaultModelPath();
     }
 
-    m_Config.inputWidth = m_RendererCore->GetWidth();
-    m_Config.inputHeight = m_RendererCore->GetHeight();
+    DebugLogW(L"[WinML] Requested ONNX model: " + m_Config.modelPath + L"\n");
+
+    m_RenderWidth = m_RendererCore->GetWidth();
+    m_RenderHeight = m_RendererCore->GetHeight();
+
+    if (m_Config.inputWidth == 0) {
+        m_Config.inputWidth = m_RenderWidth;
+    }
+
+    if (m_Config.inputHeight == 0) {
+        m_Config.inputHeight = m_RenderHeight;
+    }
 
     CreateOutputTexture();
     CreateStagingBuffers();
 
-    const size_t pixelCount = static_cast<size_t>(m_Config.inputWidth) * static_cast<size_t>(m_Config.inputHeight);
-    m_ImageTensor.resize(pixelCount * 3);
-    m_DepthTensor.resize(pixelCount);
-    m_NormalTensor.resize(pixelCount * 3);
-    m_OutputPixels.resize(pixelCount * 4);
+    const size_t modelPixelCount = static_cast<size_t>(m_Config.inputWidth) * static_cast<size_t>(m_Config.inputHeight);
+    const size_t renderPixelCount = static_cast<size_t>(m_RenderWidth) * static_cast<size_t>(m_RenderHeight);
+    m_ImageTensor.resize(modelPixelCount * 3);
+    m_DepthTensor.resize(modelPixelCount);
+    m_NormalTensor.resize(modelPixelCount * 3);
+    m_OutputPixels.resize(renderPixelCount * 4);
 
     m_BackendReady = LoadBackend();
+
+    if (m_BackendReady) {
+        DebugLogA("[WinML] Backend initialized successfully.\n");
+    }
+    else {
+        DebugLogA("[WinML] Backend initialization failed. The renderer will fall back to the lighting buffer.\n");
+    }
 }
 
-// 현재 구현에서는 매 프레임 지속 상태를 따로 계산하지 않는다.
 void DirectMLStyleTransferSystem::Update(float)
 {
 }
 
-// 추론 세션과 임시 버퍼를 모두 해제한다.
 void DirectMLStyleTransferSystem::Shutdown()
 {
     m_OutputTexture.Reset();
@@ -70,35 +111,38 @@ void DirectMLStyleTransferSystem::Shutdown()
     m_ModelReady = false;
     m_OutputReady = false;
 
-#if defined(LULLUDENS_HAS_DIRECTML_STYLE)
-    m_OrtSession.reset();
-    m_OrtEnv.reset();
+#if defined(LULLUDENS_HAS_WINML_STYLE)
+    m_Binding = nullptr;
+    m_Session = nullptr;
+    m_Device = nullptr;
+    m_Model = nullptr;
     m_InputNames.clear();
-    m_InputNameViews.clear();
-    m_OutputNames.clear();
-    m_OutputNameViews.clear();
+    m_OutputName.clear();
 #endif
 }
 
-// 한 프레임의 스타일 추론 전체 파이프라인을 실행한다.
 bool DirectMLStyleTransferSystem::Execute()
 {
     if (!IsReady()) {
+        static bool s_LoggedNotReady = false;
+        if (!s_LoggedNotReady) {
+            DebugLogA("[WinML] Execute skipped because the backend or model is not ready.\n");
+            s_LoggedNotReady = true;
+        }
         return false;
     }
 
     return CaptureInputs() && RunInference() && UploadOutput();
 }
 
-// 추론 결과를 담을 GPU 텍스처를 생성한다.
 void DirectMLStyleTransferSystem::CreateOutputTexture()
 {
     auto* device = m_RendererCore->GetDevice();
 
     D3D12_RESOURCE_DESC textureDesc = {};
     textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    textureDesc.Width = m_Config.inputWidth;
-    textureDesc.Height = m_Config.inputHeight;
+    textureDesc.Width = m_RenderWidth;
+    textureDesc.Height = m_RenderHeight;
     textureDesc.DepthOrArraySize = 1;
     textureDesc.MipLevels = 1;
     textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -117,12 +161,10 @@ void DirectMLStyleTransferSystem::CreateOutputTexture()
     );
 }
 
-// GPU 입력 텍스처를 CPU로 읽을 readback 버퍼와 결과 upload 버퍼를 만든다.
 void DirectMLStyleTransferSystem::CreateStagingBuffers()
 {
     auto* device = m_RendererCore->GetDevice();
 
-    // source 텍스처 형식에 맞는 readback 버퍼 하나를 준비한다.
     auto createReadback = [&](ID3D12Resource* source, StagingBuffer& staging) {
         D3D12_RESOURCE_DESC srcDesc = source->GetDesc();
         device->GetCopyableFootprints(
@@ -196,62 +238,83 @@ void DirectMLStyleTransferSystem::CreateStagingBuffers()
     );
 }
 
-// DirectML 실행 공급자를 연결한 ONNX Runtime 세션을 로드한다.
 bool DirectMLStyleTransferSystem::LoadBackend()
 {
-#if defined(LULLUDENS_HAS_DIRECTML_STYLE)
+#if defined(LULLUDENS_HAS_WINML_STYLE)
     if (!std::filesystem::exists(m_Config.modelPath)) {
-        OutputDebugStringW((L"DirectML style model not found: " + m_Config.modelPath + L"\n").c_str());
+        DebugLogW(L"[WinML] Model file not found: " + m_Config.modelPath + L"\n");
         return false;
     }
 
     try {
-        m_OrtEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "LulludensDirectMLStyle");
-        Ort::SessionOptions sessionOptions;
-        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+        try {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+        }
+        catch (const winrt::hresult_error& ex) {
+            if (ex.code() != RPC_E_CHANGED_MODE) {
+                throw;
+            }
+        }
 
-        OrtStatus* status = OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, 0);
-        if (status != nullptr) {
-            Ort::GetApi().ReleaseStatus(status);
+        m_Model = winrt::Windows::AI::MachineLearning::LearningModel::LoadFromFilePath(m_Config.modelPath);
+        m_Device = winrt::Windows::AI::MachineLearning::LearningModelDevice(
+            winrt::Windows::AI::MachineLearning::LearningModelDeviceKind::DirectXHighPerformance);
+        m_Session = winrt::Windows::AI::MachineLearning::LearningModelSession(m_Model, m_Device);
+        m_Binding = winrt::Windows::AI::MachineLearning::LearningModelBinding(m_Session);
+
+        std::ostringstream stream;
+        stream << "[WinML] Session created. Inputs=" << m_Model.InputFeatures().Size()
+               << ", Outputs=" << m_Model.OutputFeatures().Size() << "\n";
+
+        m_InputNames.clear();
+        for (const auto& feature : m_Model.InputFeatures()) {
+            stream << "  input: " << winrt::to_string(feature.Name()) << "\n";
+            m_InputNames.push_back(feature.Name());
+        }
+
+        if (m_Model.OutputFeatures().Size() > 0) {
+            m_OutputName = m_Model.OutputFeatures().GetAt(0).Name();
+        }
+
+        for (const auto& feature : m_Model.OutputFeatures()) {
+            stream << "  output: " << winrt::to_string(feature.Name()) << "\n";
+        }
+
+        DebugLogA(stream.str());
+
+        if (m_InputNames.size() < 3) {
+            DebugLogA("[WinML] The model must expose at least 3 inputs (image/depth/normal).\n");
             return false;
         }
 
-        m_OrtSession = std::make_unique<Ort::Session>(*m_OrtEnv, m_Config.modelPath.c_str(), sessionOptions);
-
-        Ort::AllocatorWithDefaultOptions allocator;
-        const size_t inputCount = m_OrtSession->GetInputCount();
-        const size_t outputCount = m_OrtSession->GetOutputCount();
-
-        for (size_t i = 0; i < inputCount; ++i) {
-            auto name = m_OrtSession->GetInputNameAllocated(i, allocator);
-            m_InputNames.emplace_back(name.get());
-            m_InputNameViews.push_back(m_InputNames.back().c_str());
+        if (m_OutputName.empty()) {
+            DebugLogA("[WinML] The model exposes no output tensors.\n");
+            return false;
         }
 
-        for (size_t i = 0; i < outputCount; ++i) {
-            auto name = m_OrtSession->GetOutputNameAllocated(i, allocator);
-            m_OutputNames.emplace_back(name.get());
-            m_OutputNameViews.push_back(m_OutputNames.back().c_str());
-        }
-
-        m_ModelReady = !m_InputNameViews.empty() && !m_OutputNameViews.empty();
-        return m_ModelReady;
+        m_ModelReady = true;
+        return true;
     }
-    catch (...) {
+    catch (const winrt::hresult_error& ex) {
+        DebugLogA(std::string("[WinML] HRESULT exception: ") + winrt::to_string(ex.message()) + "\n");
+        return false;
+    }
+    catch (const std::exception& ex) {
+        DebugLogA(std::string("[WinML] Standard exception: ") + ex.what() + "\n");
         return false;
     }
 #else
-    OutputDebugStringA("DirectML backend is disabled. Define LULLUDENS_ENABLE_DIRECTML with ONNX Runtime DirectML installed.\n");
+    DebugLogA(
+        "[WinML] Backend is unavailable at compile time. "
+        "Enable the Windows SDK cppwinrt headers and Windows.AI.MachineLearning support.\n");
     return false;
 #endif
 }
 
-// Lighting/Depth/Normal GPU 텍스처를 CPU 메모리로 복사하고 모델 입력 텐서 형식으로 정리한다.
 bool DirectMLStyleTransferSystem::CaptureInputs()
 {
     auto* commandList = m_RendererCore->GetCommandList();
 
-    // Depth/Normal은 직전 패스에서 SRV 상태이므로 copy source로 전환한다.
     D3D12_RESOURCE_BARRIER toCopy[2] = {};
     toCopy[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     toCopy[0].Transition.pResource = m_RendererCore->GetGBufferDepth();
@@ -267,7 +330,6 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
 
     commandList->ResourceBarrier(2, toCopy);
 
-    // GPU 텍스처 한 장을 선형 readback 버퍼로 복사한다.
     auto copyTextureToBuffer = [&](ID3D12Resource* source, const StagingBuffer& dest) {
         D3D12_TEXTURE_COPY_LOCATION src = {};
         src.pResource = source;
@@ -305,16 +367,17 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
     m_RendererCore->ResetCommandList();
 
     {
-        // Lighting 결과를 RGB NCHW 텐서로 펼친다.
         uint8_t* mapped = nullptr;
         D3D12_RANGE range = { 0, static_cast<SIZE_T>(m_LightingReadback.totalBytes) };
         m_LightingReadback.resource->Map(0, &range, reinterpret_cast<void**>(&mapped));
 
         const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
         for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-            const uint8_t* row = mapped + static_cast<size_t>(y) * m_LightingReadback.footprint.Footprint.RowPitch;
+            const uint32_t srcY = SampleSourceCoord(y, m_Config.inputHeight, m_RenderHeight);
+            const uint8_t* row = mapped + static_cast<size_t>(srcY) * m_LightingReadback.footprint.Footprint.RowPitch;
             for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
-                const uint8_t* pixel = row + x * 4;
+                const uint32_t srcX = SampleSourceCoord(x, m_Config.inputWidth, m_RenderWidth);
+                const uint8_t* pixel = row + srcX * 4;
                 const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
                 m_ImageTensor[idx] = NormalizeByte(pixel[0]);
                 m_ImageTensor[idx + planeSize] = NormalizeByte(pixel[1]);
@@ -326,7 +389,6 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
     }
 
     {
-        // Depth 결과를 0~1 범위로 정규화해 단일 채널 텐서로 만든다.
         float* mapped = nullptr;
         D3D12_RANGE range = { 0, static_cast<SIZE_T>(m_DepthReadback.totalBytes) };
         m_DepthReadback.resource->Map(0, &range, reinterpret_cast<void**>(&mapped));
@@ -334,13 +396,15 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
         float minDepth = FLT_MAX;
         float maxDepth = 0.0f;
         for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-            const uint8_t* rowBytes = reinterpret_cast<const uint8_t*>(mapped) + static_cast<size_t>(y) * m_DepthReadback.footprint.Footprint.RowPitch;
+            const uint32_t srcY = SampleSourceCoord(y, m_Config.inputHeight, m_RenderHeight);
+            const uint8_t* rowBytes = reinterpret_cast<const uint8_t*>(mapped) + static_cast<size_t>(srcY) * m_DepthReadback.footprint.Footprint.RowPitch;
             const float* row = reinterpret_cast<const float*>(rowBytes);
             for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
+                const uint32_t srcX = SampleSourceCoord(x, m_Config.inputWidth, m_RenderWidth);
                 const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
-                m_DepthTensor[idx] = row[x];
-                minDepth = (std::min)(minDepth, row[x]);
-                maxDepth = (std::max)(maxDepth, row[x]);
+                m_DepthTensor[idx] = row[srcX];
+                minDepth = (std::min)(minDepth, row[srcX]);
+                maxDepth = (std::max)(maxDepth, row[srcX]);
             }
         }
 
@@ -353,17 +417,18 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
     }
 
     {
-        // Half float normal 버퍼를 float 텐서로 변환한다.
         uint16_t* mapped = nullptr;
         D3D12_RANGE range = { 0, static_cast<SIZE_T>(m_NormalReadback.totalBytes) };
         m_NormalReadback.resource->Map(0, &range, reinterpret_cast<void**>(&mapped));
 
         const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
         for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-            const uint8_t* rowBytes = reinterpret_cast<const uint8_t*>(mapped) + static_cast<size_t>(y) * m_NormalReadback.footprint.Footprint.RowPitch;
+            const uint32_t srcY = SampleSourceCoord(y, m_Config.inputHeight, m_RenderHeight);
+            const uint8_t* rowBytes = reinterpret_cast<const uint8_t*>(mapped) + static_cast<size_t>(srcY) * m_NormalReadback.footprint.Footprint.RowPitch;
             const uint16_t* row = reinterpret_cast<const uint16_t*>(rowBytes);
             for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
-                const size_t src = static_cast<size_t>(x) * 4;
+                const uint32_t srcX = SampleSourceCoord(x, m_Config.inputWidth, m_RenderWidth);
+                const size_t src = static_cast<size_t>(srcX) * 4;
                 const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
                 m_NormalTensor[idx] = DirectX::PackedVector::XMConvertHalfToFloat(row[src + 0]);
                 m_NormalTensor[idx + planeSize] = DirectX::PackedVector::XMConvertHalfToFloat(row[src + 1]);
@@ -377,63 +442,95 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
     return true;
 }
 
-// 준비된 텐서를 ONNX Runtime DirectML 세션에 전달하고 스타일 결과를 받는다.
 bool DirectMLStyleTransferSystem::RunInference()
 {
-#if defined(LULLUDENS_HAS_DIRECTML_STYLE)
-    const std::array<int64_t, 4> imageShape = { 1, 3, static_cast<int64_t>(m_Config.inputHeight), static_cast<int64_t>(m_Config.inputWidth) };
-    const std::array<int64_t, 4> depthShape = { 1, 1, static_cast<int64_t>(m_Config.inputHeight), static_cast<int64_t>(m_Config.inputWidth) };
+#if defined(LULLUDENS_HAS_WINML_STYLE)
+    try {
+        if (m_InputNames.size() < 3) {
+            DebugLogA("[WinML] Expected 3 inputs (image/depth/normal).\n");
+            return false;
+        }
 
-    Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        std::vector<int64_t> imageShapeData = {
+            1,
+            3,
+            static_cast<int64_t>(m_Config.inputHeight),
+            static_cast<int64_t>(m_Config.inputWidth)
+        };
+        std::vector<int64_t> depthShapeData = {
+            1,
+            1,
+            static_cast<int64_t>(m_Config.inputHeight),
+            static_cast<int64_t>(m_Config.inputWidth)
+        };
 
-    Ort::Value imageTensor = Ort::Value::CreateTensor<float>(memoryInfo, m_ImageTensor.data(), m_ImageTensor.size(), imageShape.data(), imageShape.size());
-    Ort::Value depthTensor = Ort::Value::CreateTensor<float>(memoryInfo, m_DepthTensor.data(), m_DepthTensor.size(), depthShape.data(), depthShape.size());
-    Ort::Value normalTensor = Ort::Value::CreateTensor<float>(memoryInfo, m_NormalTensor.data(), m_NormalTensor.size(), imageShape.data(), imageShape.size());
+        auto imageShape = winrt::single_threaded_vector<int64_t>(std::move(imageShapeData));
+        auto depthShape = winrt::single_threaded_vector<int64_t>(std::move(depthShapeData));
 
-    std::array<Ort::Value, 3> inputs = { std::move(imageTensor), std::move(depthTensor), std::move(normalTensor) };
-    auto outputs = m_OrtSession->Run(
-        Ort::RunOptions{ nullptr },
-        m_InputNameViews.data(),
-        inputs.data(),
-        inputs.size(),
-        m_OutputNameViews.data(),
-        1
-    );
+        auto imageTensor = winrt::Windows::AI::MachineLearning::TensorFloat::CreateFromArray(
+            imageShape,
+            winrt::array_view<const float>(m_ImageTensor));
+        auto depthTensor = winrt::Windows::AI::MachineLearning::TensorFloat::CreateFromArray(
+            depthShape,
+            winrt::array_view<const float>(m_DepthTensor));
+        auto normalTensor = winrt::Windows::AI::MachineLearning::TensorFloat::CreateFromArray(
+            imageShape,
+            winrt::array_view<const float>(m_NormalTensor));
 
-    if (outputs.empty() || !outputs[0].IsTensor()) {
+        m_Binding.Clear();
+        m_Binding.Bind(m_InputNames[0], imageTensor);
+        m_Binding.Bind(m_InputNames[1], depthTensor);
+        m_Binding.Bind(m_InputNames[2], normalTensor);
+
+        auto result = m_Session.Evaluate(m_Binding, L"LulludensWinML");
+        auto outputFeature = result.Outputs().Lookup(m_OutputName);
+        auto outputTensor = outputFeature.as<winrt::Windows::AI::MachineLearning::TensorFloat>();
+        auto outputView = outputTensor.GetAsVectorView();
+
+        const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
+        const uint32_t expectedValues = static_cast<uint32_t>(planeSize * 3);
+        if (outputView.Size() < expectedValues) {
+            std::ostringstream stream;
+            stream << "[WinML] Output tensor is smaller than expected. size=" << outputView.Size()
+                   << ", expected=" << expectedValues << "\n";
+            DebugLogA(stream.str());
+            return false;
+        }
+
+        for (uint32_t y = 0; y < m_RenderHeight; ++y) {
+            const uint32_t modelY = SampleSourceCoord(y, m_RenderHeight, m_Config.inputHeight);
+            for (uint32_t x = 0; x < m_RenderWidth; ++x) {
+                const uint32_t modelX = SampleSourceCoord(x, m_RenderWidth, m_Config.inputWidth);
+                const size_t modelIdx = static_cast<size_t>(modelY) * m_Config.inputWidth + modelX;
+                const size_t dst = (static_cast<size_t>(y) * m_RenderWidth + x) * 4;
+                m_OutputPixels[dst + 0] = FloatToByte(outputView.GetAt(static_cast<uint32_t>(modelIdx)));
+                m_OutputPixels[dst + 1] = FloatToByte(outputView.GetAt(static_cast<uint32_t>(modelIdx + planeSize)));
+                m_OutputPixels[dst + 2] = FloatToByte(outputView.GetAt(static_cast<uint32_t>(modelIdx + planeSize * 2)));
+                m_OutputPixels[dst + 3] = 255;
+            }
+        }
+
+        return true;
+    }
+    catch (const winrt::hresult_error& ex) {
+        DebugLogA(std::string("[WinML] Inference HRESULT exception: ") + winrt::to_string(ex.message()) + "\n");
         return false;
     }
-
-    const float* output = outputs[0].GetTensorData<float>();
-    const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
-    for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-        for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
-            const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
-            const size_t dst = idx * 4;
-            m_OutputPixels[dst + 0] = FloatToByte(output[idx]);
-            m_OutputPixels[dst + 1] = FloatToByte(output[idx + planeSize]);
-            m_OutputPixels[dst + 2] = FloatToByte(output[idx + planeSize * 2]);
-            m_OutputPixels[dst + 3] = 255;
-        }
-    }
-
-    return true;
 #else
     return false;
 #endif
 }
 
-// 추론 결과 바이트 배열을 GPU 텍스처로 업로드해 후속 복사에 쓸 수 있게 만든다.
 bool DirectMLStyleTransferSystem::UploadOutput()
 {
     uint8_t* mapped = nullptr;
     D3D12_RANGE readRange = { 0, 0 };
     m_OutputUpload.resource->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
 
-    for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
+    for (uint32_t y = 0; y < m_RenderHeight; ++y) {
         uint8_t* row = mapped + static_cast<size_t>(y) * m_OutputUpload.footprint.Footprint.RowPitch;
-        const uint8_t* src = m_OutputPixels.data() + static_cast<size_t>(y) * m_Config.inputWidth * 4;
-        memcpy(row, src, static_cast<size_t>(m_Config.inputWidth) * 4);
+        const uint8_t* src = m_OutputPixels.data() + static_cast<size_t>(y) * m_RenderWidth * 4;
+        memcpy(row, src, static_cast<size_t>(m_RenderWidth) * 4);
     }
 
     m_OutputUpload.resource->Unmap(0, nullptr);
@@ -474,8 +571,8 @@ bool DirectMLStyleTransferSystem::UploadOutput()
     return true;
 }
 
-// 기본 모델 위치는 CapstoneDesign 쪽 ONNX export 산출물로 가정한다.
 std::wstring DirectMLStyleTransferSystem::GetDefaultModelPath() const
 {
-    return L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\reconet_style.onnx";
+    return L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\net4.onnx";
 }
+
