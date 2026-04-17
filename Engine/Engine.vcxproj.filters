@@ -1,140 +1,74 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="소스 파일">
+    <Filter Include="Source Files">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="헤더 파일">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="리소스 파일">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4C08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
     <Filter Include="Common">
-      <UniqueIdentifier>{5883aa6d-38b6-4451-9020-59ff04b6d651}</UniqueIdentifier>
+      <UniqueIdentifier>{5883AA6D-38B6-4451-9020-59FF04B6D651}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\App">
-      <UniqueIdentifier>{36c3085c-35ef-4761-816d-e6fb0fa65af0}</UniqueIdentifier>
+    <Filter Include="Source Files\App">
+      <UniqueIdentifier>{36C3085C-35EF-4761-816D-E6FB0FA65AF0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\App">
-      <UniqueIdentifier>{8b75a6c8-5960-4a99-94e6-82a40eab01b3}</UniqueIdentifier>
+    <Filter Include="Header Files\App">
+      <UniqueIdentifier>{8B75A6C8-5960-4A99-94E6-82A40EAB01B3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Core">
-      <UniqueIdentifier>{5e323931-6084-43ac-9489-36ef0a78da21}</UniqueIdentifier>
+    <Filter Include="Header Files\Core">
+      <UniqueIdentifier>{5E323931-6084-43AC-9489-36EF0A78DA21}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Core">
-      <UniqueIdentifier>{29e1f5eb-33f1-4879-a1ed-125c487e44ae}</UniqueIdentifier>
+    <Filter Include="Source Files\Core">
+      <UniqueIdentifier>{29E1F5EB-33F1-4879-A1ED-125C487E44AE}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Physics">
-      <UniqueIdentifier>{911d8168-592d-406c-9d26-92045b7a0b23}</UniqueIdentifier>
+    <Filter Include="Source Files\Physics">
+      <UniqueIdentifier>{911D8168-592D-406C-9D26-92045B7A0B23}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Physics\System">
-      <UniqueIdentifier>{aa565c12-2828-469f-bfa9-727d1be8192e}</UniqueIdentifier>
+    <Filter Include="Source Files\Physics\System">
+      <UniqueIdentifier>{AA565C12-2828-469F-BFA9-727D1BE8192E}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Physics\Components">
-      <UniqueIdentifier>{6b56c303-ca02-4cbd-b9e7-59f106c10374}</UniqueIdentifier>
+    <Filter Include="Source Files\Physics\Components">
+      <UniqueIdentifier>{6B56C303-CA02-4CBD-B9E7-59F106C10374}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Physics">
-      <UniqueIdentifier>{633508ce-eb0a-442d-97cd-e4647732a6e5}</UniqueIdentifier>
+    <Filter Include="Header Files\Physics">
+      <UniqueIdentifier>{633508CE-EB0A-442D-97CD-E4647732A6E5}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Physics\Components">
-      <UniqueIdentifier>{a5c8aa79-8b29-422d-a1c6-795066874707}</UniqueIdentifier>
+    <Filter Include="Header Files\Physics\Components">
+      <UniqueIdentifier>{A5C8AA79-8B29-422D-A1C6-795066874707}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Physics\Systems">
-      <UniqueIdentifier>{840a63dd-7b76-4dda-bb17-e62ed41d0724}</UniqueIdentifier>
+    <Filter Include="Header Files\Physics\Systems">
+      <UniqueIdentifier>{840A63DD-7B76-4DDA-BB17-E62ED41D0724}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Renderer">
-      <UniqueIdentifier>{5eba1da2-9a2d-4bfc-b0d4-2a0845e602c3}</UniqueIdentifier>
+    <Filter Include="Source Files\Renderer">
+      <UniqueIdentifier>{5EBA1DA2-9A2D-4BFC-B0D4-2A0845E602C3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Renderer\Components">
-      <UniqueIdentifier>{e7e63d71-b545-497f-bb2e-994b775a52be}</UniqueIdentifier>
+    <Filter Include="Source Files\Renderer\Components">
+      <UniqueIdentifier>{E7E63D71-B545-497F-BB2E-994B775A52BE}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Renderer\Shaders">
-      <UniqueIdentifier>{3798d0d2-cc9f-4df2-be64-3cf29fa47e7e}</UniqueIdentifier>
+    <Filter Include="Source Files\Renderer\Shaders">
+      <UniqueIdentifier>{3798D0D2-CC9F-4DF2-BE64-3CF29FA47E7E}</UniqueIdentifier>
     </Filter>
-    <Filter Include="소스 파일\Renderer\Systems">
-      <UniqueIdentifier>{7abc3c58-bc38-41de-96ba-5def55e55d0a}</UniqueIdentifier>
+    <Filter Include="Source Files\Renderer\Systems">
+      <UniqueIdentifier>{7ABC3C58-BC38-41DE-96BA-5DEF55E55D0A}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Renderer">
-      <UniqueIdentifier>{fac2e5ce-27b9-4335-a59b-8a556763d643}</UniqueIdentifier>
+    <Filter Include="Header Files\Renderer">
+      <UniqueIdentifier>{FAC2E5CE-27B9-4335-A59B-8A556763D643}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Renderer\Components">
-      <UniqueIdentifier>{6805375c-f267-4620-9ddb-d7d2a7576bd9}</UniqueIdentifier>
+    <Filter Include="Header Files\Renderer\Components">
+      <UniqueIdentifier>{6805375C-F267-4620-9DDB-D7D2A7576BD9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Renderer\Systems">
-      <UniqueIdentifier>{7c736398-bbb6-4d22-8e74-c957b17b3189}</UniqueIdentifier>
+    <Filter Include="Header Files\Renderer\Systems">
+      <UniqueIdentifier>{7C736398-BBB6-4D22-8E74-C957B17B3189}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="App\GameEngine.h">
-      <Filter>헤더 파일\App</Filter>
-    </ClInclude>
-    <ClInclude Include="App\EntityInspector.h">
-      <Filter>헤더 파일\App</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\ISystem.h">
-      <Filter>헤더 파일\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\ModelInstantiation.h">
-      <Filter>헤더 파일\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\ResourceManager.h">
-      <Filter>헤더 파일\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\Entity.h">
-      <Filter>헤더 파일\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\FBXLoader.h">
-      <Filter>헤더 파일\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\IComponent.h">
-      <Filter>헤더 파일\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\PhysicsScheduler.h">
-      <Filter>헤더 파일\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\PhysicsWorld.h">
-      <Filter>헤더 파일\Physics</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\Components\ColliderComponent.h">
-      <Filter>헤더 파일\Physics\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\Components\RigidbodyComponent.h">
-      <Filter>헤더 파일\Physics\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\Components\SoftBodyComponent.h">
-      <Filter>헤더 파일\Physics\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\Systems\CollisionSystem.h">
-      <Filter>헤더 파일\Physics\Systems</Filter>
-    </ClInclude>
-    <ClInclude Include="Physics\Systems\DynamicsSystem.h">
-      <Filter>헤더 파일\Physics\Systems</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\MaterialComponent.h">
-      <Filter>헤더 파일\Renderer\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\MeshComponent.h">
-      <Filter>헤더 파일\Renderer\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\TransformComponent.h">
-      <Filter>헤더 파일\Renderer\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Model.h">
-      <Filter>헤더 파일\Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\RendererCore.h">
-      <Filter>헤더 파일\Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Systems\RenderConstants.h">
-      <Filter>헤더 파일\Renderer\Systems</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Systems\RenderSystem.h">
-      <Filter>헤더 파일\Renderer\Systems</Filter>
-    </ClInclude>
     <ClInclude Include="..\Common\Camera.h">
       <Filter>Common</Filter>
     </ClInclude>
@@ -162,69 +96,111 @@
     <ClInclude Include="..\Common\UploadBuffer.h">
       <Filter>Common</Filter>
     </ClInclude>
-    <ClInclude Include="Core\InputManager.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Systems\CameraSystem.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\CameraComponent.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\TransformAnimationComponent.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Systems\AnimationSystem.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\SkeletonComponent.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\Components\SkeletalAnimationComponent.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="..\Common\WICTextureLoader.h">
       <Filter>Common</Filter>
     </ClInclude>
-    <ClInclude Include="Inference\DirectMLStyleTransferSystem.h" />
+    <ClInclude Include="App\EntityInspector.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="App\GameEngine.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Entity.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\FBXLoader.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\IComponent.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\ISystem.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\ModelInstantiation.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\ResourceManager.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\TextureManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\InputManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Inference\WinMLStyleTransferSystem.h" />
+    <ClInclude Include="Physics\Components\ColliderComponent.h">
+      <Filter>Header Files\Physics\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\Components\RigidbodyComponent.h">
+      <Filter>Header Files\Physics\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\Components\SoftBodyComponent.h">
+      <Filter>Header Files\Physics\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\PhysicsScheduler.h">
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\PhysicsWorld.h">
+      <Filter>Header Files\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\Systems\CollisionSystem.h">
+      <Filter>Header Files\Physics\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\Systems\DynamicsSystem.h">
+      <Filter>Header Files\Physics\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\CameraComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\MaterialComponent.h">
+      <Filter>Header Files\Renderer\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\MeshComponent.h">
+      <Filter>Header Files\Renderer\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\SkeletalAnimationComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\SkeletonComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\SkyComponent.h">
+      <Filter>Header Files\Renderer\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\TransformAnimationComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Components\TransformComponent.h">
+      <Filter>Header Files\Renderer\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Model.h">
+      <Filter>Header Files\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RendererCore.h">
+      <Filter>Header Files\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\AnimationSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\CameraSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\EnvironmentManager.h">
+      <Filter>Header Files\Renderer\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\RenderConstants.h">
+      <Filter>Header Files\Renderer\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\RenderSystem.h">
+      <Filter>Header Files\Renderer\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Systems\SkyRenderer.h">
+      <Filter>Header Files\Renderer\Systems</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="App\EntityInspector.cpp">
-      <Filter>소스 파일\App</Filter>
-    </ClCompile>
-    <ClCompile Include="App\MainApp.cpp">
-      <Filter>소스 파일\App</Filter>
-    </ClCompile>
-    <ClCompile Include="App\GameEngine.cpp">
-      <Filter>소스 파일\App</Filter>
-    </ClCompile>
-    <ClCompile Include="Core\ModelInstantiation.cpp">
-      <Filter>소스 파일\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Core\FBXLoader.cpp">
-      <Filter>소스 파일\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Physics\Systems\CollisionSystem.cpp">
-      <Filter>소스 파일\Physics\System</Filter>
-    </ClCompile>
-    <ClCompile Include="Physics\Systems\DynamicsSystem.cpp">
-      <Filter>소스 파일\Physics\System</Filter>
-    </ClCompile>
-    <ClCompile Include="Physics\PhysicsScheduler.cpp">
-      <Filter>소스 파일\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="Physics\PhysicsWorld.cpp">
-      <Filter>소스 파일\Physics</Filter>
-    </ClCompile>
-    <ClCompile Include="Renderer\RendererCore.cpp">
-      <Filter>소스 파일\Renderer</Filter>
-    </ClCompile>
-    <ClCompile Include="Renderer\Components\MeshComponent.cpp">
-      <Filter>소스 파일\Renderer\Components</Filter>
-    </ClCompile>
-    <ClCompile Include="Renderer\Systems\RenderSystem.cpp">
-      <Filter>소스 파일\Renderer\Systems</Filter>
-    </ClCompile>
     <ClCompile Include="..\Common\Camera.cpp">
       <Filter>Common</Filter>
     </ClCompile>
@@ -246,45 +222,96 @@
     <ClCompile Include="..\Common\MathHelper.cpp">
       <Filter>Common</Filter>
     </ClCompile>
-    <ClCompile Include="Core\InputManager.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Renderer\Systems\CameraSystem.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="Renderer\Systems\AnimationSystem.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="..\Common\WICTextureLoader.cpp">
       <Filter>Common</Filter>
     </ClCompile>
-    <ClCompile Include="Inference\DirectMLStyleTransferSystem.cpp" />
+    <ClCompile Include="App\EntityInspector.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="App\GameEngine.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="App\MainApp.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\FBXLoader.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\ModelInstantiation.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\TextureManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\InputManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Inference\WinMLStyleTransferSystem.cpp" />
+    <ClCompile Include="Physics\PhysicsScheduler.cpp">
+      <Filter>Source Files\Physics</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\PhysicsWorld.cpp">
+      <Filter>Source Files\Physics</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\Systems\CollisionSystem.cpp">
+      <Filter>Source Files\Physics\System</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\Systems\DynamicsSystem.cpp">
+      <Filter>Source Files\Physics\System</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Components\MeshComponent.cpp">
+      <Filter>Source Files\Renderer\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\RendererCore.cpp">
+      <Filter>Source Files\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Systems\AnimationSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Systems\CameraSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Systems\EnvironmentManager.cpp">
+      <Filter>Source Files\Renderer\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Systems\RenderSystem.cpp">
+      <Filter>Source Files\Renderer\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Systems\SkyRenderer.cpp">
+      <Filter>Source Files\Renderer\Systems</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Models\car.txt" />
     <Text Include="Models\skull.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Renderer\Shaders\LightingUtil.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
-    </None>
     <None Include="Renderer\Shaders\default.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
+      <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
     <None Include="Renderer\Shaders\GBuffer.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
+      <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
     <None Include="Renderer\Shaders\Lighting.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
+      <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
-    <None Include="Renderer\Shaders\SSGI.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
+    <None Include="Renderer\Shaders\LightingUtil.hlsl">
+      <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
     <None Include="Renderer\Shaders\ShadowMap.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
+      <Filter>Source Files\Renderer\Shaders</Filter>
+    </None>
+    <None Include="Renderer\Shaders\SSGI.hlsl">
+      <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
     <None Include="Renderer\Shaders\SSGIDenoise.hlsl">
-      <Filter>소스 파일\Renderer\Shaders</Filter>
+      <Filter>Source Files\Renderer\Shaders</Filter>
+    </None>
+    <None Include="Renderer\Shaders\BackgroundResolve.hlsl">
+      <Filter>Source Files\Renderer\Shaders</Filter>
+    </None>
+    <None Include="Renderer\Shaders\Skybox.hlsl">
+      <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
   </ItemGroup>
 </Project>

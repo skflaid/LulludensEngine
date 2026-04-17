@@ -12,6 +12,7 @@ struct TextureInfo {
     ComPtr<ID3D12Resource> UploadHeap;
     D3D12_CPU_DESCRIPTOR_HANDLE SRVHandle = {};
     UINT SRVIndex = 0; // SRV 힙 내 인덱스
+    bool IsCubeMap = false;
     bool IsValid = false;
 };
 

@@ -1,4 +1,4 @@
-#include "DirectMLStyleTransferSystem.h"
+#include "WinMLStyleTransferSystem.h"
 #include "Renderer/RendererCore.h"
 #include <Windows.h>
 #include <DirectXPackedVector.h>
@@ -52,12 +52,12 @@ namespace
     }
 }
 
-DirectMLStyleTransferSystem::DirectMLStyleTransferSystem(RendererCore* rendererCore, Config config)
+WinMLStyleTransferSystem::WinMLStyleTransferSystem(RendererCore* rendererCore, Config config)
     : m_RendererCore(rendererCore), m_Config(std::move(config))
 {
 }
 
-void DirectMLStyleTransferSystem::Initialize()
+void WinMLStyleTransferSystem::Initialize()
 {
     if (m_Config.modelPath.empty()) {
         m_Config.modelPath = GetDefaultModelPath();
@@ -96,11 +96,11 @@ void DirectMLStyleTransferSystem::Initialize()
     }
 }
 
-void DirectMLStyleTransferSystem::Update(float)
+void WinMLStyleTransferSystem::Update(float)
 {
 }
 
-void DirectMLStyleTransferSystem::Shutdown()
+void WinMLStyleTransferSystem::Shutdown()
 {
     m_OutputTexture.Reset();
     m_LightingReadback.resource.Reset();
@@ -121,7 +121,7 @@ void DirectMLStyleTransferSystem::Shutdown()
 #endif
 }
 
-bool DirectMLStyleTransferSystem::Execute()
+bool WinMLStyleTransferSystem::Execute()
 {
     if (!IsReady()) {
         static bool s_LoggedNotReady = false;
@@ -135,7 +135,7 @@ bool DirectMLStyleTransferSystem::Execute()
     return CaptureInputs() && RunInference() && UploadOutput();
 }
 
-void DirectMLStyleTransferSystem::CreateOutputTexture()
+void WinMLStyleTransferSystem::CreateOutputTexture()
 {
     auto* device = m_RendererCore->GetDevice();
 
@@ -161,7 +161,7 @@ void DirectMLStyleTransferSystem::CreateOutputTexture()
     );
 }
 
-void DirectMLStyleTransferSystem::CreateStagingBuffers()
+void WinMLStyleTransferSystem::CreateStagingBuffers()
 {
     auto* device = m_RendererCore->GetDevice();
 
@@ -238,7 +238,7 @@ void DirectMLStyleTransferSystem::CreateStagingBuffers()
     );
 }
 
-bool DirectMLStyleTransferSystem::LoadBackend()
+bool WinMLStyleTransferSystem::LoadBackend()
 {
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     if (!std::filesystem::exists(m_Config.modelPath)) {
@@ -311,7 +311,7 @@ bool DirectMLStyleTransferSystem::LoadBackend()
 #endif
 }
 
-bool DirectMLStyleTransferSystem::CaptureInputs()
+bool WinMLStyleTransferSystem::CaptureInputs()
 {
     auto* commandList = m_RendererCore->GetCommandList();
 
@@ -442,7 +442,7 @@ bool DirectMLStyleTransferSystem::CaptureInputs()
     return true;
 }
 
-bool DirectMLStyleTransferSystem::RunInference()
+bool WinMLStyleTransferSystem::RunInference()
 {
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     try {
@@ -521,7 +521,7 @@ bool DirectMLStyleTransferSystem::RunInference()
 #endif
 }
 
-bool DirectMLStyleTransferSystem::UploadOutput()
+bool WinMLStyleTransferSystem::UploadOutput()
 {
     uint8_t* mapped = nullptr;
     D3D12_RANGE readRange = { 0, 0 };
@@ -571,8 +571,7 @@ bool DirectMLStyleTransferSystem::UploadOutput()
     return true;
 }
 
-std::wstring DirectMLStyleTransferSystem::GetDefaultModelPath() const
+std::wstring WinMLStyleTransferSystem::GetDefaultModelPath() const
 {
     return L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\net4.onnx";
 }
-

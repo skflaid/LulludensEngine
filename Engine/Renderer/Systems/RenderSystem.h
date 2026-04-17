@@ -12,7 +12,9 @@ using namespace DirectX;
 static constexpr UINT MAX_BONES = 128;
 
 class GameEngine;
-class DirectMLStyleTransferSystem;
+class WinMLStyleTransferSystem;
+class EnvironmentManager;
+class SkyRenderer;
 
 enum class RenderMode {
     Composite,  // Lighting + SSGI
@@ -40,6 +42,7 @@ public:
 
     void RegisterEntity(Entity* entity);
     void UnregisterEntity(Entity* entity);
+    void SetActiveSky(Entity* skyEntity);
 
     // 한 프레임의 그림자/GBuffer/SSGI/Lighting/StyleTransfer 흐름을 실행한다.
     void Render();
@@ -53,6 +56,7 @@ private:
     void RenderGBufferPass(UINT frameIndex);
     // 조명 결과를 오프스크린 LightingBuffer에 출력하는 패스.
     void RenderLightingPass(UINT frameIndex);
+    void RenderBackgroundResolvePass(UINT frameIndex);
     // 간단한 SSGI 계산 패스.
     void RenderSSGIPass(UINT frameIndex);
     // SSGI 결과를 정리하는 denoise 패스.
@@ -61,6 +65,7 @@ private:
     void CopySSGIToPrevious(UINT frameIndex);
     // Lighting 또는 StyleTransfer 결과를 백버퍼로 복사한다.
     void CopyFrameToBackBuffer(ID3D12Resource* sourceTexture);
+    void RenderSkyPass(UINT frameIndex);
     // 실제 메시 엔티티 1개를 G-Buffer 패스에 그린다.
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     // 카메라/라이트/그림자/모드 상수를 프레임 CB에 채운다.
@@ -72,6 +77,7 @@ private:
 
     void CreateGBufferPipelineState();
     void CreateLightingPipelineState();
+    void CreateBackgroundResolvePipelineState();
     void CreateSSGIPipelineState();
     void CreateSSGIDenoisePipelineState();
     void CreateConstantBuffer();
@@ -83,7 +89,9 @@ private:
     // 스왑체인/GBuffer/오프스크린 버퍼를 소유하는 저수준 렌더 코어.
     std::unique_ptr<RendererCore> m_RendererCore;
     // Lighting 이후 화면 스타일 추론을 담당하는 후처리 시스템.
-    std::unique_ptr<DirectMLStyleTransferSystem> m_DirectMLStyleTransferSystem;
+    std::unique_ptr<WinMLStyleTransferSystem> m_WinMLStyleTransferSystem;
+    std::unique_ptr<EnvironmentManager> m_EnvironmentManager;
+    std::unique_ptr<SkyRenderer> m_SkyRenderer;
     std::vector<Entity*> m_RenderableEntities;
     HWND m_Hwnd;
     uint32_t m_Width;
@@ -97,6 +105,8 @@ private:
 
     ComPtr<ID3D12RootSignature> m_LightingRootSignature;
     ComPtr<ID3D12PipelineState> m_LightingPipelineState;
+    ComPtr<ID3D12RootSignature> m_BackgroundResolveRootSignature;
+    ComPtr<ID3D12PipelineState> m_BackgroundResolvePipelineState;
     ComPtr<ID3D12RootSignature> m_SSGIRootSignature;
     ComPtr<ID3D12PipelineState> m_SSGIPipelineState;
     ComPtr<ID3D12RootSignature> m_SSGIDenoiseRootSignature;
@@ -117,6 +127,7 @@ private:
     // Lighting
     XMFLOAT4 m_AmbientLight = { 0.6f, 0.6f, 0.6f, 1.0f };
     float m_TotalTime = 0.0f;
+    float m_DeltaTime = 0.0f;
     
     // Render mode
     RenderMode m_RenderMode = RenderMode::Composite;

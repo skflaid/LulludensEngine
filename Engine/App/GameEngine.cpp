@@ -15,6 +15,7 @@
 #include "Core/InputManager.h" 
 #include "Renderer/Systems/CameraSystem.h" 
 #include "Renderer/Components/CameraComponent.h" 
+#include "Renderer/Components/SkyComponent.h"
 #include "Renderer/Systems/AnimationSystem.h"
 #include "Renderer/Components/SkeletonComponent.h"
 #include "Renderer/Components/SkeletalAnimationComponent.h"
@@ -123,6 +124,16 @@ void GameEngine::CreateEntities()
 
     SetMainCamera(cameraEntity.get()); // 메인 카메라로 등록
     m_Entities.push_back(std::move(cameraEntity));
+
+    auto skyEntity = std::make_unique<Entity>(100);
+    auto sky = skyEntity->AddComponent<SkyComponent>();
+    sky->CubemapName = "snowcube1024";
+    sky->Exposure = 1.0f;
+    sky->RotationY = 0.0f;
+    if (m_RenderSystem) {
+        m_RenderSystem->SetActiveSky(skyEntity.get());
+    }
+    m_Entities.push_back(std::move(skyEntity));
 
     // Cube
     for (int i = 0; i < 5; i++) {

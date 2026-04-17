@@ -82,13 +82,27 @@ bool TextureManager::LoadTexture(const std::string& name, const std::wstring& fi
     // SRV 인덱스 저장 (AllocateSRVHandle에서 이미 증가시켰으므로 -1)
     textureInfo->SRVIndex = m_NextSRVIndex - 1;
     
+    D3D12_RESOURCE_DESC resourceDesc = textureInfo->Resource->GetDesc();
+    textureInfo->IsCubeMap =
+        resourceDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D &&
+        resourceDesc.DepthOrArraySize == 6;
+
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = textureInfo->Resource->GetDesc().Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Texture2D.MipLevels = textureInfo->Resource->GetDesc().MipLevels;
-    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+    srvDesc.Format = resourceDesc.Format;
+
+    if (textureInfo->IsCubeMap) {
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+        srvDesc.TextureCube.MostDetailedMip = 0;
+        srvDesc.TextureCube.MipLevels = resourceDesc.MipLevels;
+        srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+    }
+    else {
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Texture2D.MostDetailedMip = 0;
+        srvDesc.Texture2D.MipLevels = resourceDesc.MipLevels;
+        srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+    }
     
     // D3D12의 CreateShaderResourceView는 void를 반환하므로 에러 체크는 디바이스 초기화 상태에 의존
     device->CreateShaderResourceView(textureInfo->Resource.Get(), &srvDesc, textureInfo->SRVHandle);

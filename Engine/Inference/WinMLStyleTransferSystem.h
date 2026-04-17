@@ -17,7 +17,7 @@ class RendererCore;
 #include <winrt/Windows.Foundation.Collections.h>
 #endif
 
-class DirectMLStyleTransferSystem : public ISystem
+class WinMLStyleTransferSystem : public ISystem
 {
 public:
     struct Config
@@ -27,12 +27,12 @@ public:
         uint32_t inputHeight = 360;
     };
 
-    DirectMLStyleTransferSystem(RendererCore* rendererCore, Config config);
+    WinMLStyleTransferSystem(RendererCore* rendererCore, Config config);
 
     void Initialize() override;
     void Update(float deltaTime) override;
     void Shutdown() override;
-    const char* GetName() const override { return "DirectMLStyleTransferSystem"; }
+    const char* GetName() const override { return "WinMLStyleTransferSystem"; }
 
     bool Execute();
     bool IsReady() const { return m_BackendReady && m_ModelReady; }

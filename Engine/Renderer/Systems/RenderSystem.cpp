@@ -1,14 +1,17 @@
 #include "App/GameEngine.h"
-#include "Inference/DirectMLStyleTransferSystem.h"
+#include "Inference/WinMLStyleTransferSystem.h"
 #include "RenderSystem.h"
 #include "../Components/TransformComponent.h"
 #include "../Components/MeshComponent.h"
 #include "../Components/MaterialComponent.h"
 #include "../Common/d3dUtil.h"
 #include "Renderer/Components/CameraComponent.h"
+#include "Renderer/Components/SkyComponent.h"
 #include <d3dcompiler.h>
 #include "Renderer/Components/SkeletonComponent.h"
 #include "Core/TextureManager.h"
+#include "EnvironmentManager.h"
+#include "SkyRenderer.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -50,17 +53,24 @@ void RenderSystem::Initialize() {
     
     InitializeTextures();
 
+    m_EnvironmentManager = std::make_unique<EnvironmentManager>();
+    m_EnvironmentManager->Initialize(TextureManager::Get());
+
+    m_SkyRenderer = std::make_unique<SkyRenderer>();
+    m_SkyRenderer->Initialize(m_RendererCore.get());
+
     // CapstoneDesign에서 export한 ONNX 모델을 Lighting 이후에 연결한다.
-    DirectMLStyleTransferSystem::Config styleConfig = {};
+    WinMLStyleTransferSystem::Config styleConfig = {};
     styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\net4.onnx";
     styleConfig.inputWidth = 640;
     styleConfig.inputHeight = 360;
-    m_DirectMLStyleTransferSystem = std::make_unique<DirectMLStyleTransferSystem>(m_RendererCore.get(), styleConfig);
-    m_DirectMLStyleTransferSystem->Initialize();
+    m_WinMLStyleTransferSystem = std::make_unique<WinMLStyleTransferSystem>(m_RendererCore.get(), styleConfig);
+    m_WinMLStyleTransferSystem->Initialize();
     
     CreateGBufferPipelineState();
     CreateShadowPipelineState();
     CreateLightingPipelineState();
+    CreateBackgroundResolvePipelineState();
     CreateSSGIPipelineState();
     CreateSSGIDenoisePipelineState();
 }
@@ -292,7 +302,14 @@ void RenderSystem::CreateGBufferPipelineState() {
     dsDesc.DepthEnable = TRUE;
     dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
     dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-    dsDesc.StencilEnable = FALSE;
+    dsDesc.StencilEnable = TRUE;
+    dsDesc.StencilReadMask = 0xFF;
+    dsDesc.StencilWriteMask = 0xFF;
+    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.BackFace = dsDesc.FrontFace;
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
     pso.InputLayout = { inputElements, _countof(inputElements) };
@@ -310,10 +327,100 @@ void RenderSystem::CreateGBufferPipelineState() {
     pso.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM;     // Albedo
     pso.RTVFormats[3] = DXGI_FORMAT_R8G8B8A8_UNORM;     // Material
     pso.RTVFormats[4] = DXGI_FORMAT_R32_FLOAT;          // Depth
-    pso.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     pso.SampleDesc.Count = 1;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_GBufferPipelineState)));
+}
+
+void RenderSystem::CreateBackgroundResolvePipelineState()
+{
+    auto device = m_RendererCore->GetDevice();
+
+    D3D12_ROOT_PARAMETER rootParameter = {};
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameter.Descriptor.ShaderRegister = 0;
+    rootParameter.Descriptor.RegisterSpace = 0;
+    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+    rootDesc.NumParameters = 1;
+    rootDesc.pParameters = &rootParameter;
+    rootDesc.NumStaticSamplers = 0;
+    rootDesc.pStaticSamplers = nullptr;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+    ComPtr<ID3DBlob> sig;
+    ComPtr<ID3DBlob> err;
+    ThrowIfFailed(D3D12SerializeRootSignature(
+        &rootDesc,
+        D3D_ROOT_SIGNATURE_VERSION_1,
+        &sig,
+        &err));
+    ThrowIfFailed(device->CreateRootSignature(
+        0,
+        sig->GetBufferPointer(),
+        sig->GetBufferSize(),
+        IID_PPV_ARGS(&m_BackgroundResolveRootSignature)));
+
+    const std::wstring shaderPath = L"Renderer/Shaders/BackgroundResolve.hlsl";
+    ComPtr<ID3DBlob> vs = d3dUtil::CompileShader(shaderPath, nullptr, "VS", "vs_5_0");
+    ComPtr<ID3DBlob> ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
+
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = TRUE;
+    for (int i = 0; i < 2; ++i) {
+        blendDesc.RenderTarget[i].BlendEnable = FALSE;
+        blendDesc.RenderTarget[i].LogicOpEnable = FALSE;
+        blendDesc.RenderTarget[i].SrcBlend = D3D12_BLEND_ONE;
+        blendDesc.RenderTarget[i].DestBlend = D3D12_BLEND_ZERO;
+        blendDesc.RenderTarget[i].BlendOp = D3D12_BLEND_OP_ADD;
+        blendDesc.RenderTarget[i].SrcBlendAlpha = D3D12_BLEND_ONE;
+        blendDesc.RenderTarget[i].DestBlendAlpha = D3D12_BLEND_ZERO;
+        blendDesc.RenderTarget[i].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+        blendDesc.RenderTarget[i].LogicOp = D3D12_LOGIC_OP_NOOP;
+        blendDesc.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    }
+
+    D3D12_RASTERIZER_DESC rastDesc = {};
+    rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
+    rastDesc.CullMode = D3D12_CULL_MODE_NONE;
+    rastDesc.FrontCounterClockwise = FALSE;
+    rastDesc.DepthClipEnable = TRUE;
+
+    D3D12_DEPTH_STENCIL_DESC dsDesc = {};
+    dsDesc.DepthEnable = FALSE;
+    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    dsDesc.StencilEnable = TRUE;
+    dsDesc.StencilReadMask = 0xFF;
+    dsDesc.StencilWriteMask = 0x00;
+    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.BackFace = dsDesc.FrontFace;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    pso.InputLayout = { nullptr, 0 };
+    pso.pRootSignature = m_BackgroundResolveRootSignature.Get();
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.RasterizerState = rastDesc;
+    pso.BlendState = blendDesc;
+    pso.DepthStencilState = dsDesc;
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 2;
+    pso.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    pso.RTVFormats[1] = DXGI_FORMAT_R32_FLOAT;
+    pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    pso.SampleDesc.Count = 1;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(
+        &pso,
+        IID_PPV_ARGS(&m_BackgroundResolvePipelineState)));
 }
 
 void RenderSystem::CreateLightingPipelineState() {
@@ -793,6 +900,7 @@ void RenderSystem::CreateShadowPipelineState() {
 
 void RenderSystem::Update(float deltaTime) {
     m_TotalTime += deltaTime;
+    m_DeltaTime = deltaTime;
 
     // 1) ?ㅼ펷?덊넠 媛吏??뷀떚???섎굹 李얘린
     Entity* skinnedEntity = nullptr;
@@ -838,6 +946,13 @@ void RenderSystem::Update(float deltaTime) {
 }
 
 void RenderSystem::Shutdown() {
+    if (m_SkyRenderer) {
+        m_SkyRenderer->Shutdown();
+        m_SkyRenderer.reset();
+    }
+
+    m_EnvironmentManager.reset();
+
     for (int i = 0; i < FrameCount; ++i) {
         if (m_ObjectConstantBuffers[i]) {
             m_ObjectConstantBuffers[i]->Unmap(0, nullptr);
@@ -853,9 +968,9 @@ void RenderSystem::Shutdown() {
         }
     }
 
-    if (m_DirectMLStyleTransferSystem) {
-        m_DirectMLStyleTransferSystem->Shutdown();
-        m_DirectMLStyleTransferSystem.reset();
+    if (m_WinMLStyleTransferSystem) {
+        m_WinMLStyleTransferSystem->Shutdown();
+        m_WinMLStyleTransferSystem.reset();
     }
 
     if (m_RendererCore) {
@@ -915,6 +1030,13 @@ void RenderSystem::UnregisterEntity(Entity* entity) {
     m_RenderableEntities.erase(std::remove(m_RenderableEntities.begin(), m_RenderableEntities.end(), entity), m_RenderableEntities.end());
 }
 
+void RenderSystem::SetActiveSky(Entity* skyEntity)
+{
+    if (m_EnvironmentManager) {
+        m_EnvironmentManager->SetActiveSky(skyEntity);
+    }
+}
+
 void RenderSystem::Render() {
     m_RendererCore->BeginFrame();
 
@@ -925,6 +1047,7 @@ void RenderSystem::Render() {
 
     // G-Buffer Pass
     RenderGBufferPass(frameIndex);
+    RenderBackgroundResolvePass(frameIndex);
 
     // SSGI Pass 
     RenderSSGIPass(frameIndex);
@@ -937,12 +1060,13 @@ void RenderSystem::Render() {
 
     // Lighting Pass
     RenderLightingPass(frameIndex);
+    RenderSkyPass(frameIndex);
 
     // 추론이 가능하면 스타일 결과를, 아니면 원본 lighting 결과를 바로 출력한다.
     if (m_IsStyleTransferEnabled &&
-        m_DirectMLStyleTransferSystem &&
-        m_DirectMLStyleTransferSystem->Execute()) {
-        CopyFrameToBackBuffer(m_DirectMLStyleTransferSystem->GetOutputTexture());
+        m_WinMLStyleTransferSystem &&
+        m_WinMLStyleTransferSystem->Execute()) {
+        CopyFrameToBackBuffer(m_WinMLStyleTransferSystem->GetOutputTexture());
     }
     else {
         CopyFrameToBackBuffer(m_RendererCore->GetLightingBuffer());
@@ -1063,13 +1187,20 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     commandList->ClearRenderTargetView(gbufferRTVs[2], clearColor, 0, nullptr);
     commandList->ClearRenderTargetView(gbufferRTVs[3], clearColor, 0, nullptr);
     commandList->ClearRenderTargetView(gbufferRTVs[4], clearColor, 0, nullptr);
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    commandList->ClearDepthStencilView(
+        dsvHandle,
+        D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+        1.0f,
+        0,
+        0,
+        nullptr);
 
     commandList->OMSetRenderTargets(5, gbufferRTVs, FALSE, &dsvHandle);
 
     // Set pipeline state
     commandList->SetPipelineState(m_GBufferPipelineState.Get());
     commandList->SetGraphicsRootSignature(m_GBufferRootSignature.Get());
+    commandList->OMSetStencilRef(1);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     // Render entities
@@ -1109,6 +1240,52 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     barriers[4].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     
     commandList->ResourceBarrier(5, barriers);
+}
+
+void RenderSystem::RenderBackgroundResolvePass(UINT frameIndex) {
+    auto commandList = m_RendererCore->GetCommandList();
+
+    D3D12_RESOURCE_BARRIER toRenderTarget[2] = {};
+    toRenderTarget[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toRenderTarget[0].Transition.pResource = m_RendererCore->GetGBufferNormal();
+    toRenderTarget[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    toRenderTarget[0].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toRenderTarget[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    toRenderTarget[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toRenderTarget[1].Transition.pResource = m_RendererCore->GetGBufferDepth();
+    toRenderTarget[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    toRenderTarget[1].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toRenderTarget[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(2, toRenderTarget);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE resolveRTVs[2] = {
+        m_RendererCore->GetGBufferRTVHandle(1),
+        m_RendererCore->GetGBufferRTVHandle(4)
+    };
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_RendererCore->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
+
+    commandList->OMSetRenderTargets(2, resolveRTVs, FALSE, &dsvHandle);
+    commandList->SetPipelineState(m_BackgroundResolvePipelineState.Get());
+    commandList->SetGraphicsRootSignature(m_BackgroundResolveRootSignature.Get());
+    commandList->OMSetStencilRef(0);
+
+    D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetGraphicsRootConstantBufferView(0, passCBAddress);
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->DrawInstanced(3, 1, 0, 0);
+
+    D3D12_RESOURCE_BARRIER toShaderResource[2] = {};
+    toShaderResource[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toShaderResource[0].Transition.pResource = m_RendererCore->GetGBufferNormal();
+    toShaderResource[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toShaderResource[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    toShaderResource[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    toShaderResource[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toShaderResource[1].Transition.pResource = m_RendererCore->GetGBufferDepth();
+    toShaderResource[1].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toShaderResource[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    toShaderResource[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(2, toShaderResource);
 }
 
 void RenderSystem::RenderLightingPass(UINT frameIndex) {
@@ -1177,6 +1354,45 @@ void RenderSystem::CopyFrameToBackBuffer(ID3D12Resource* sourceTexture) {
     toRenderTarget.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
     toRenderTarget.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &toRenderTarget);
+}
+
+void RenderSystem::RenderSkyPass(UINT frameIndex)
+{
+    if (!m_EnvironmentManager || !m_SkyRenderer) {
+        return;
+    }
+
+    Entity* skyEntity = m_EnvironmentManager->GetActiveSkyEntity();
+    if (!skyEntity || !skyEntity->IsActive()) {
+        return;
+    }
+
+    SkyComponent* sky = m_EnvironmentManager->GetActiveSkyComponent();
+    if (!sky || !sky->Visible || sky->Type != SkyType::Cubemap) {
+        return;
+    }
+
+    TextureInfo* cubemap = m_EnvironmentManager->GetActiveSkyCubemap();
+    if (!cubemap) {
+        return;
+    }
+
+    Entity* cameraEntity = m_Engine->GetMainCamera();
+    if (!cameraEntity) {
+        return;
+    }
+
+    CameraComponent* camera = cameraEntity->GetComponent<CameraComponent>();
+    if (!camera) {
+        return;
+    }
+
+    m_SkyRenderer->Render(
+        m_RendererCore->GetCommandList(),
+        *camera,
+        *sky,
+        *cubemap,
+        frameIndex);
 }
 
 void RenderSystem::ToggleRenderMode() {
@@ -1433,7 +1649,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gNearZ = 0.1f;
     passConstants.gFarZ = 100.0f;
     passConstants.gTotalTime = m_TotalTime;
-    passConstants.gDeltaTime = 0.016f;
+    passConstants.gDeltaTime = m_DeltaTime;
     passConstants.gAmbientLight = m_AmbientLight;
     passConstants.gRenderMode = static_cast<int>(m_RenderMode);
     passConstants.cbPerObjectPad3 = 0.0f;

@@ -151,7 +151,7 @@
     <ClInclude Include="Core\ResourceManager.h" />
     <ClInclude Include="Core\TextureManager.h" />
     <ClInclude Include="Core\InputManager.h" />
-    <ClInclude Include="Inference\DirectMLStyleTransferSystem.h" />
+    <ClInclude Include="Inference\WinMLStyleTransferSystem.h" />
     <ClInclude Include="Physics\Components\ColliderComponent.h" />
     <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
     <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
@@ -162,6 +162,7 @@
     <ClInclude Include="Renderer\Components\CameraComponent.h" />
     <ClInclude Include="Renderer\Components\MaterialComponent.h" />
     <ClInclude Include="Renderer\Components\MeshComponent.h" />
+    <ClInclude Include="Renderer\Components\SkyComponent.h" />
     <ClInclude Include="Renderer\Components\SkeletalAnimationComponent.h" />
     <ClInclude Include="Renderer\Components\SkeletonComponent.h" />
     <ClInclude Include="Renderer\Components\TransformAnimationComponent.h" />
@@ -170,8 +171,10 @@
     <ClInclude Include="Renderer\RendererCore.h" />
     <ClInclude Include="Renderer\Systems\AnimationSystem.h" />
     <ClInclude Include="Renderer\Systems\CameraSystem.h" />
+    <ClInclude Include="Renderer\Systems\EnvironmentManager.h" />
     <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
+    <ClInclude Include="Renderer\Systems\SkyRenderer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\Camera.cpp" />
@@ -189,7 +192,7 @@
     <ClCompile Include="Core\ModelInstantiation.cpp" />
     <ClCompile Include="Core\TextureManager.cpp" />
     <ClCompile Include="Core\InputManager.cpp" />
-    <ClCompile Include="Inference\DirectMLStyleTransferSystem.cpp" />
+    <ClCompile Include="Inference\WinMLStyleTransferSystem.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
@@ -198,7 +201,9 @@
     <ClCompile Include="Renderer\RendererCore.cpp" />
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp" />
     <ClCompile Include="Renderer\Systems\CameraSystem.cpp" />
+    <ClCompile Include="Renderer\Systems\EnvironmentManager.cpp" />
     <ClCompile Include="Renderer\Systems\RenderSystem.cpp" />
+    <ClCompile Include="Renderer\Systems\SkyRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Models\car.txt" />
@@ -231,6 +236,16 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Renderer\Shaders\SSGIDenoise.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Renderer\Shaders\BackgroundResolve.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Renderer\Shaders\Skybox.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

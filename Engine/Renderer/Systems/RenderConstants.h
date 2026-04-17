@@ -61,4 +61,13 @@ struct PassConstants {
     XMFLOAT2 cbPerObjectPad4;
 };
 
+struct SkyPassConstants {
+    XMFLOAT4X4 gViewNoTranslation;
+    XMFLOAT4X4 gProj;
+    XMFLOAT4 gTint;
+    float gExposure;
+    float gRotationY;
+    XMFLOAT2 gPadding;
+};
+
 #pragma pack(pop)

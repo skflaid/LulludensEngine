@@ -156,13 +156,14 @@ void RendererCore::CreateDepthStencilBuffer() {
     depthStencilDesc.Height = m_Height;
     depthStencilDesc.DepthOrArraySize = 1;
     depthStencilDesc.MipLevels = 1;
-    depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    depthStencilDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
     depthStencilDesc.SampleDesc.Count = 1;
     depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
     D3D12_CLEAR_VALUE clearValue = {};
-    clearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    clearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     clearValue.DepthStencil.Depth = 1.0f;
+    clearValue.DepthStencil.Stencil = 0;
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -176,7 +177,16 @@ void RendererCore::CreateDepthStencilBuffer() {
         IID_PPV_ARGS(&m_DepthStencil)
     );
 
-    m_Device->CreateDepthStencilView(m_DepthStencil.Get(), nullptr, m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+    dsvDesc.Texture2D.MipSlice = 0;
+
+    m_Device->CreateDepthStencilView(
+        m_DepthStencil.Get(),
+        &dsvDesc,
+        m_DSVHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
 void RendererCore::CreateGBuffer() {
@@ -530,7 +540,7 @@ void RendererCore::EndFrame() {
 }
 
 void RendererCore::Present() {
-    m_SwapChain->Present(1, 0);
+    m_SwapChain->Present(0, 0);
     MoveToNextFrame();
 }
 
