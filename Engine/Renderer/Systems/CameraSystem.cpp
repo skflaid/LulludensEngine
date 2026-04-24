@@ -37,8 +37,10 @@ void CameraSystem::Update(float deltaTime) {
     POINT mouseDelta = input->GetMouseDelta();
 
     // public 멤버인 rotation에 직접 접근
-    transformComp->rotation.y += mouseDelta.x * cameraComp->LookSpeed * deltaTime; // Yaw
-    transformComp->rotation.x += mouseDelta.y * cameraComp->LookSpeed * deltaTime; // Pitch
+    // Mouse delta is already measured per frame, so applying deltaTime again
+    // makes look sensitivity depend on FPS.
+    transformComp->rotation.y += mouseDelta.x * cameraComp->LookSpeed; // Yaw
+    transformComp->rotation.x += mouseDelta.y * cameraComp->LookSpeed; // Pitch
 
     // Pitch 각도 제한
     transformComp->rotation.x = std::max(-XM_PIDIV2 + 0.1f, std::min(XM_PIDIV2 - 0.1f, transformComp->rotation.x));

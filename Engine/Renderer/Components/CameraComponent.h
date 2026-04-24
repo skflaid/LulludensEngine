@@ -13,5 +13,5 @@ struct CameraComponent : public IComponent {
 
     float Fov = XM_PIDIV4; // 45도
     float MoveSpeed = 20.0f;
-    float LookSpeed = 0.1f;
+    float LookSpeed = 0.003f;
 };
