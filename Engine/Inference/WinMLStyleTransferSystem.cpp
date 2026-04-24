@@ -1,11 +1,8 @@
 #include "WinMLStyleTransferSystem.h"
 #include "Renderer/RendererCore.h"
 #include <Windows.h>
-#include <DirectXPackedVector.h>
 #include <algorithm>
 #include <array>
-#include <cfloat>
-#include <cstring>
 #include <filesystem>
 #include <sstream>
 #include <stdexcept>
@@ -14,6 +11,11 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
+    constexpr uint32_t kTensorizeDescriptorCount = 7;
+    constexpr uint32_t kDetensorizeDescriptorCount = 2;
+    constexpr uint32_t kThreadsX = 8;
+    constexpr uint32_t kThreadsY = 8;
+
     void DebugLogA(const std::string& message)
     {
         OutputDebugStringA(message.c_str());
@@ -24,31 +26,99 @@ namespace
         OutputDebugStringW(message.c_str());
     }
 
-    float NormalizeByte(uint8_t value)
+    D3D12_RESOURCE_DESC CreateStructuredBufferDesc(UINT64 byteSize, bool allowUnorderedAccess)
     {
-        return static_cast<float>(value) / 255.0f;
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Width = byteSize;
+        desc.Height = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels = 1;
+        desc.SampleDesc.Count = 1;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags = allowUnorderedAccess ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE;
+        return desc;
     }
 
-    uint8_t FloatToByte(float value)
+    void CreateStructuredBuffer(
+        ID3D12Device* device,
+        uint32_t elementCount,
+        uint32_t elementStride,
+        bool allowUnorderedAccess,
+        D3D12_RESOURCE_STATES initialState,
+        WinMLStyleTransferSystem::GpuBuffer& buffer)
     {
-        const float clamped = std::clamp(value, 0.0f, 1.0f);
-        return static_cast<uint8_t>(clamped * 255.0f + 0.5f);
+        D3D12_HEAP_PROPERTIES heapProps = {};
+        heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+        const UINT64 byteSize = static_cast<UINT64>(elementCount) * elementStride;
+        const D3D12_RESOURCE_DESC desc = CreateStructuredBufferDesc(byteSize, allowUnorderedAccess);
+
+        ThrowIfFailed(device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            initialState,
+            nullptr,
+            IID_PPV_ARGS(&buffer.resource)));
+
+        buffer.elementCount = elementCount;
+        buffer.elementStride = elementStride;
     }
 
-    uint32_t ClampCoord(uint32_t value, uint32_t maxExclusive)
+    void CreateBufferSrv(
+        ID3D12Device* device,
+        ID3D12Resource* resource,
+        uint32_t elementCount,
+        uint32_t elementStride,
+        D3D12_CPU_DESCRIPTOR_HANDLE handle)
     {
-        return (maxExclusive == 0) ? 0u : (std::min)(value, maxExclusive - 1);
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.Buffer.FirstElement = 0;
+        desc.Buffer.NumElements = elementCount;
+        desc.Buffer.StructureByteStride = elementStride;
+        desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+        device->CreateShaderResourceView(resource, &desc, handle);
     }
 
-    uint32_t SampleSourceCoord(uint32_t dstCoord, uint32_t dstExtent, uint32_t srcExtent)
+    void CreateBufferUav(
+        ID3D12Device* device,
+        ID3D12Resource* resource,
+        uint32_t elementCount,
+        uint32_t elementStride,
+        D3D12_CPU_DESCRIPTOR_HANDLE handle)
     {
-        if (dstExtent == 0 || srcExtent == 0) {
-            return 0;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
+        desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.Buffer.FirstElement = 0;
+        desc.Buffer.NumElements = elementCount;
+        desc.Buffer.StructureByteStride = elementStride;
+        desc.Buffer.CounterOffsetInBytes = 0;
+        desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+        device->CreateUnorderedAccessView(resource, nullptr, &desc, handle);
+    }
+
+    void TransitionResource(
+        ID3D12GraphicsCommandList* commandList,
+        ID3D12Resource* resource,
+        D3D12_RESOURCE_STATES before,
+        D3D12_RESOURCE_STATES after)
+    {
+        if (before == after) {
+            return;
         }
 
-        const float uv = (static_cast<float>(dstCoord) + 0.5f) / static_cast<float>(dstExtent);
-        const uint32_t srcCoord = static_cast<uint32_t>(uv * static_cast<float>(srcExtent));
-        return ClampCoord(srcCoord, srcExtent);
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = resource;
+        barrier.Transition.StateBefore = before;
+        barrier.Transition.StateAfter = after;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList->ResourceBarrier(1, &barrier);
     }
 }
 
@@ -77,14 +147,9 @@ void WinMLStyleTransferSystem::Initialize()
     }
 
     CreateOutputTexture();
-    CreateStagingBuffers();
-
-    const size_t modelPixelCount = static_cast<size_t>(m_Config.inputWidth) * static_cast<size_t>(m_Config.inputHeight);
-    const size_t renderPixelCount = static_cast<size_t>(m_RenderWidth) * static_cast<size_t>(m_RenderHeight);
-    m_ImageTensor.resize(modelPixelCount * 3);
-    m_DepthTensor.resize(modelPixelCount);
-    m_NormalTensor.resize(modelPixelCount * 3);
-    m_OutputPixels.resize(renderPixelCount * 4);
+    CreateTensorResources();
+    CreateDescriptorHeaps();
+    CreateComputePipeline();
 
     m_BackendReady = LoadBackend();
 
@@ -103,13 +168,23 @@ void WinMLStyleTransferSystem::Update(float)
 void WinMLStyleTransferSystem::Shutdown()
 {
     m_OutputTexture.Reset();
-    m_LightingReadback.resource.Reset();
-    m_DepthReadback.resource.Reset();
-    m_NormalReadback.resource.Reset();
-    m_OutputUpload.resource.Reset();
+    m_ImageTensorBuffer.resource.Reset();
+    m_DepthTensorBuffer.resource.Reset();
+    m_NormalTensorBuffer.resource.Reset();
+    m_OutputTensorBuffer.resource.Reset();
+    m_DepthMinMaxBuffer.resource.Reset();
+    m_TensorizeHeap.Reset();
+    m_DetensorizeHeap.Reset();
+    m_TensorizeRootSignature.Reset();
+    m_DetensorizeRootSignature.Reset();
+    m_ResetDepthMinMaxPSO.Reset();
+    m_TensorizePSO.Reset();
+    m_NormalizeDepthPSO.Reset();
+    m_DetensorizePSO.Reset();
     m_BackendReady = false;
     m_ModelReady = false;
     m_OutputReady = false;
+    m_InputBuffersNeedUavTransition = false;
 
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     m_Binding = nullptr;
@@ -147,95 +222,225 @@ void WinMLStyleTransferSystem::CreateOutputTexture()
     textureDesc.MipLevels = 1;
     textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     textureDesc.SampleDesc.Count = 1;
+    textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
 
-    device->CreateCommittedResource(
+    ThrowIfFailed(device->CreateCommittedResource(
         &heapProps,
         D3D12_HEAP_FLAG_NONE,
         &textureDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         nullptr,
-        IID_PPV_ARGS(&m_OutputTexture)
-    );
+        IID_PPV_ARGS(&m_OutputTexture)));
 }
 
-void WinMLStyleTransferSystem::CreateStagingBuffers()
+void WinMLStyleTransferSystem::CreateTensorResources()
 {
+    const uint32_t modelPixelCount = m_Config.inputWidth * m_Config.inputHeight;
     auto* device = m_RendererCore->GetDevice();
 
-    auto createReadback = [&](ID3D12Resource* source, StagingBuffer& staging) {
-        D3D12_RESOURCE_DESC srcDesc = source->GetDesc();
-        device->GetCopyableFootprints(
-            &srcDesc,
-            0,
-            1,
-            0,
-            &staging.footprint,
-            &staging.numRows,
-            &staging.rowSizeInBytes,
-            &staging.totalBytes
-        );
+    CreateStructuredBuffer(
+        device,
+        modelPixelCount * 3,
+        sizeof(float),
+        true,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        m_ImageTensorBuffer);
+    CreateStructuredBuffer(
+        device,
+        modelPixelCount,
+        sizeof(float),
+        true,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        m_DepthTensorBuffer);
+    CreateStructuredBuffer(
+        device,
+        modelPixelCount * 3,
+        sizeof(float),
+        true,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        m_NormalTensorBuffer);
+    CreateStructuredBuffer(
+        device,
+        modelPixelCount * 3,
+        sizeof(float),
+        true,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        m_OutputTensorBuffer);
+    CreateStructuredBuffer(
+        device,
+        2,
+        sizeof(uint32_t),
+        true,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        m_DepthMinMaxBuffer);
 
-        D3D12_RESOURCE_DESC bufferDesc = {};
-        bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        bufferDesc.Width = staging.totalBytes;
-        bufferDesc.Height = 1;
-        bufferDesc.DepthOrArraySize = 1;
-        bufferDesc.MipLevels = 1;
-        bufferDesc.SampleDesc.Count = 1;
-        bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    m_InputBuffersNeedUavTransition = false;
+}
 
-        D3D12_HEAP_PROPERTIES heapProps = {};
-        heapProps.Type = D3D12_HEAP_TYPE_READBACK;
+void WinMLStyleTransferSystem::CreateDescriptorHeaps()
+{
+    auto* device = m_RendererCore->GetDevice();
+    const UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-        device->CreateCommittedResource(
-            &heapProps,
-            D3D12_HEAP_FLAG_NONE,
-            &bufferDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            nullptr,
-            IID_PPV_ARGS(&staging.resource)
-        );
-    };
+    D3D12_DESCRIPTOR_HEAP_DESC tensorizeHeapDesc = {};
+    tensorizeHeapDesc.NumDescriptors = kTensorizeDescriptorCount;
+    tensorizeHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    tensorizeHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&tensorizeHeapDesc, IID_PPV_ARGS(&m_TensorizeHeap)));
 
-    createReadback(m_RendererCore->GetLightingBuffer(), m_LightingReadback);
-    createReadback(m_RendererCore->GetGBufferDepth(), m_DepthReadback);
-    createReadback(m_RendererCore->GetGBufferNormal(), m_NormalReadback);
+    D3D12_CPU_DESCRIPTOR_HANDLE tensorizeHandle = m_TensorizeHeap->GetCPUDescriptorHandleForHeapStart();
+    device->CreateShaderResourceView(m_RendererCore->GetLightingBuffer(), nullptr, tensorizeHandle);
+    tensorizeHandle.ptr += descriptorSize;
+    device->CreateShaderResourceView(m_RendererCore->GetGBufferDepth(), nullptr, tensorizeHandle);
+    tensorizeHandle.ptr += descriptorSize;
+    device->CreateShaderResourceView(m_RendererCore->GetGBufferNormal(), nullptr, tensorizeHandle);
+    tensorizeHandle.ptr += descriptorSize;
+    CreateBufferUav(device, m_ImageTensorBuffer.resource.Get(), m_ImageTensorBuffer.elementCount, m_ImageTensorBuffer.elementStride, tensorizeHandle);
+    tensorizeHandle.ptr += descriptorSize;
+    CreateBufferUav(device, m_DepthTensorBuffer.resource.Get(), m_DepthTensorBuffer.elementCount, m_DepthTensorBuffer.elementStride, tensorizeHandle);
+    tensorizeHandle.ptr += descriptorSize;
+    CreateBufferUav(device, m_NormalTensorBuffer.resource.Get(), m_NormalTensorBuffer.elementCount, m_NormalTensorBuffer.elementStride, tensorizeHandle);
+    tensorizeHandle.ptr += descriptorSize;
+    CreateBufferUav(device, m_DepthMinMaxBuffer.resource.Get(), m_DepthMinMaxBuffer.elementCount, m_DepthMinMaxBuffer.elementStride, tensorizeHandle);
 
-    D3D12_RESOURCE_DESC outputDesc = m_OutputTexture->GetDesc();
-    device->GetCopyableFootprints(
-        &outputDesc,
-        0,
-        1,
-        0,
-        &m_OutputUpload.footprint,
-        &m_OutputUpload.numRows,
-        &m_OutputUpload.rowSizeInBytes,
-        &m_OutputUpload.totalBytes
-    );
+    D3D12_DESCRIPTOR_HEAP_DESC detensorizeHeapDesc = {};
+    detensorizeHeapDesc.NumDescriptors = kDetensorizeDescriptorCount;
+    detensorizeHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    detensorizeHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&detensorizeHeapDesc, IID_PPV_ARGS(&m_DetensorizeHeap)));
 
-    D3D12_RESOURCE_DESC uploadDesc = {};
-    uploadDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    uploadDesc.Width = m_OutputUpload.totalBytes;
-    uploadDesc.Height = 1;
-    uploadDesc.DepthOrArraySize = 1;
-    uploadDesc.MipLevels = 1;
-    uploadDesc.SampleDesc.Count = 1;
-    uploadDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    D3D12_CPU_DESCRIPTOR_HANDLE detensorizeHandle = m_DetensorizeHeap->GetCPUDescriptorHandleForHeapStart();
+    CreateBufferSrv(device, m_OutputTensorBuffer.resource.Get(), m_OutputTensorBuffer.elementCount, m_OutputTensorBuffer.elementStride, detensorizeHandle);
+    detensorizeHandle.ptr += descriptorSize;
 
-    D3D12_HEAP_PROPERTIES uploadHeapProps = {};
-    uploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12_UNORDERED_ACCESS_VIEW_DESC outputUavDesc = {};
+    outputUavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    outputUavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    outputUavDesc.Texture2D.MipSlice = 0;
+    outputUavDesc.Texture2D.PlaneSlice = 0;
+    device->CreateUnorderedAccessView(m_OutputTexture.Get(), nullptr, &outputUavDesc, detensorizeHandle);
+}
 
-    device->CreateCommittedResource(
-        &uploadHeapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &uploadDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&m_OutputUpload.resource)
-    );
+void WinMLStyleTransferSystem::CreateComputePipeline()
+{
+    auto* device = m_RendererCore->GetDevice();
+    const std::wstring shaderPath = L"Renderer/Shaders/StyleTransferTensor.hlsl";
+
+    {
+        D3D12_DESCRIPTOR_RANGE srvRanges[3] = {};
+        for (UINT i = 0; i < 3; ++i) {
+            srvRanges[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+            srvRanges[i].NumDescriptors = 1;
+            srvRanges[i].BaseShaderRegister = i;
+            srvRanges[i].RegisterSpace = 0;
+            srvRanges[i].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        }
+
+        D3D12_DESCRIPTOR_RANGE uavRanges[4] = {};
+        for (UINT i = 0; i < 4; ++i) {
+            uavRanges[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+            uavRanges[i].NumDescriptors = 1;
+            uavRanges[i].BaseShaderRegister = i;
+            uavRanges[i].RegisterSpace = 0;
+            uavRanges[i].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        }
+
+        D3D12_ROOT_PARAMETER rootParameters[3] = {};
+        rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        rootParameters[0].Constants.ShaderRegister = 0;
+        rootParameters[0].Constants.RegisterSpace = 0;
+        rootParameters[0].Constants.Num32BitValues = 4;
+        rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(srvRanges);
+        rootParameters[1].DescriptorTable.pDescriptorRanges = srvRanges;
+        rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(uavRanges);
+        rootParameters[2].DescriptorTable.pDescriptorRanges = uavRanges;
+        rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+        rootDesc.NumParameters = _countof(rootParameters);
+        rootDesc.pParameters = rootParameters;
+        rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+        ComPtr<ID3DBlob> sig;
+        ComPtr<ID3DBlob> err;
+        ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+        ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_TensorizeRootSignature)));
+
+        auto resetCs = d3dUtil::CompileShader(shaderPath, nullptr, "ResetDepthMinMaxCS", "cs_5_0");
+        auto tensorizeCs = d3dUtil::CompileShader(shaderPath, nullptr, "TensorizeCS", "cs_5_0");
+        auto normalizeCs = d3dUtil::CompileShader(shaderPath, nullptr, "NormalizeDepthCS", "cs_5_0");
+
+        D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+        psoDesc.pRootSignature = m_TensorizeRootSignature.Get();
+
+        psoDesc.CS = { resetCs->GetBufferPointer(), resetCs->GetBufferSize() };
+        ThrowIfFailed(device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_ResetDepthMinMaxPSO)));
+
+        psoDesc.CS = { tensorizeCs->GetBufferPointer(), tensorizeCs->GetBufferSize() };
+        ThrowIfFailed(device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_TensorizePSO)));
+
+        psoDesc.CS = { normalizeCs->GetBufferPointer(), normalizeCs->GetBufferSize() };
+        ThrowIfFailed(device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_NormalizeDepthPSO)));
+    }
+
+    {
+        D3D12_DESCRIPTOR_RANGE srvRange = {};
+        srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        srvRange.NumDescriptors = 1;
+        srvRange.BaseShaderRegister = 3;
+        srvRange.RegisterSpace = 0;
+        srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        D3D12_DESCRIPTOR_RANGE uavRange = {};
+        uavRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+        uavRange.NumDescriptors = 1;
+        uavRange.BaseShaderRegister = 4;
+        uavRange.RegisterSpace = 0;
+        uavRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        D3D12_ROOT_PARAMETER rootParameters[3] = {};
+        rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        rootParameters[0].Constants.ShaderRegister = 0;
+        rootParameters[0].Constants.RegisterSpace = 0;
+        rootParameters[0].Constants.Num32BitValues = 4;
+        rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
+        rootParameters[1].DescriptorTable.pDescriptorRanges = &srvRange;
+        rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+        rootParameters[2].DescriptorTable.pDescriptorRanges = &uavRange;
+        rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+        rootDesc.NumParameters = _countof(rootParameters);
+        rootDesc.pParameters = rootParameters;
+        rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+        ComPtr<ID3DBlob> sig;
+        ComPtr<ID3DBlob> err;
+        ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+        ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_DetensorizeRootSignature)));
+
+        auto detensorizeCs = d3dUtil::CompileShader(shaderPath, nullptr, "DetensorizeCS", "cs_5_0");
+
+        D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+        psoDesc.pRootSignature = m_DetensorizeRootSignature.Get();
+        psoDesc.CS = { detensorizeCs->GetBufferPointer(), detensorizeCs->GetBufferSize() };
+        ThrowIfFailed(device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_DetensorizePSO)));
+    }
 }
 
 bool WinMLStyleTransferSystem::LoadBackend()
@@ -269,6 +474,13 @@ bool WinMLStyleTransferSystem::LoadBackend()
         m_InputNames.clear();
         for (const auto& feature : m_Model.InputFeatures()) {
             stream << "  input: " << winrt::to_string(feature.Name()) << "\n";
+            if (auto tensorFeature = feature.try_as<winrt::Windows::AI::MachineLearning::TensorFeatureDescriptor>()) {
+                stream << "    shape:";
+                for (const int64_t dim : tensorFeature.Shape()) {
+                    stream << " " << dim;
+                }
+                stream << "\n";
+            }
             m_InputNames.push_back(feature.Name());
         }
 
@@ -278,6 +490,13 @@ bool WinMLStyleTransferSystem::LoadBackend()
 
         for (const auto& feature : m_Model.OutputFeatures()) {
             stream << "  output: " << winrt::to_string(feature.Name()) << "\n";
+            if (auto tensorFeature = feature.try_as<winrt::Windows::AI::MachineLearning::TensorFeatureDescriptor>()) {
+                stream << "    shape:";
+                for (const int64_t dim : tensorFeature.Shape()) {
+                    stream << " " << dim;
+                }
+                stream << "\n";
+            }
         }
 
         DebugLogA(stream.str());
@@ -311,134 +530,86 @@ bool WinMLStyleTransferSystem::LoadBackend()
 #endif
 }
 
+void WinMLStyleTransferSystem::DispatchTensorization()
+{
+    auto* commandList = m_RendererCore->GetCommandList();
+    const std::array<uint32_t, 4> constants = {
+        m_RenderWidth,
+        m_RenderHeight,
+        m_Config.inputWidth,
+        m_Config.inputHeight
+    };
+
+    ID3D12DescriptorHeap* heaps[] = { m_TensorizeHeap.Get() };
+    commandList->SetDescriptorHeaps(1, heaps);
+    commandList->SetComputeRootSignature(m_TensorizeRootSignature.Get());
+    commandList->SetComputeRoot32BitConstants(0, static_cast<UINT>(constants.size()), constants.data(), 0);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_TensorizeHeap->GetGPUDescriptorHandleForHeapStart();
+    commandList->SetComputeRootDescriptorTable(1, srvHandle);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
+    const UINT descriptorSize = m_RendererCore->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    uavHandle.ptr += static_cast<UINT64>(3) * descriptorSize;
+    commandList->SetComputeRootDescriptorTable(2, uavHandle);
+
+    commandList->SetPipelineState(m_ResetDepthMinMaxPSO.Get());
+    commandList->Dispatch(1, 1, 1);
+
+    commandList->SetPipelineState(m_TensorizePSO.Get());
+    commandList->Dispatch((m_Config.inputWidth + (kThreadsX - 1)) / kThreadsX, (m_Config.inputHeight + (kThreadsY - 1)) / kThreadsY, 1);
+
+    D3D12_RESOURCE_BARRIER uavBarrier = {};
+    uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    uavBarrier.UAV.pResource = m_DepthMinMaxBuffer.resource.Get();
+    commandList->ResourceBarrier(1, &uavBarrier);
+
+    commandList->SetPipelineState(m_NormalizeDepthPSO.Get());
+    commandList->Dispatch((m_Config.inputWidth + (kThreadsX - 1)) / kThreadsX, (m_Config.inputHeight + (kThreadsY - 1)) / kThreadsY, 1);
+}
+
 bool WinMLStyleTransferSystem::CaptureInputs()
 {
     auto* commandList = m_RendererCore->GetCommandList();
 
-    D3D12_RESOURCE_BARRIER toCopy[2] = {};
-    toCopy[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    toCopy[0].Transition.pResource = m_RendererCore->GetGBufferDepth();
-    toCopy[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    toCopy[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    toCopy[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    TransitionResource(commandList, m_RendererCore->GetLightingBuffer(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_RendererCore->GetGBufferDepth(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_RendererCore->GetGBufferNormal(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-    toCopy[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    toCopy[1].Transition.pResource = m_RendererCore->GetGBufferNormal();
-    toCopy[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    toCopy[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    toCopy[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    if (m_InputBuffersNeedUavTransition) {
+        TransitionResource(commandList, m_ImageTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        TransitionResource(commandList, m_DepthTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        TransitionResource(commandList, m_NormalTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        TransitionResource(commandList, m_DepthMinMaxBuffer.resource.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
 
-    commandList->ResourceBarrier(2, toCopy);
+    DispatchTensorization();
 
-    auto copyTextureToBuffer = [&](ID3D12Resource* source, const StagingBuffer& dest) {
-        D3D12_TEXTURE_COPY_LOCATION src = {};
-        src.pResource = source;
-        src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        src.SubresourceIndex = 0;
-
-        D3D12_TEXTURE_COPY_LOCATION dst = {};
-        dst.pResource = dest.resource.Get();
-        dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        dst.PlacedFootprint = dest.footprint;
-
-        commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+    D3D12_RESOURCE_BARRIER uavBarriers[4] = {};
+    ID3D12Resource* uavResources[4] = {
+        m_ImageTensorBuffer.resource.Get(),
+        m_DepthTensorBuffer.resource.Get(),
+        m_NormalTensorBuffer.resource.Get(),
+        m_DepthMinMaxBuffer.resource.Get()
     };
+    for (UINT i = 0; i < _countof(uavResources); ++i) {
+        uavBarriers[i].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        uavBarriers[i].UAV.pResource = uavResources[i];
+    }
+    commandList->ResourceBarrier(_countof(uavBarriers), uavBarriers);
 
-    copyTextureToBuffer(m_RendererCore->GetLightingBuffer(), m_LightingReadback);
-    copyTextureToBuffer(m_RendererCore->GetGBufferDepth(), m_DepthReadback);
-    copyTextureToBuffer(m_RendererCore->GetGBufferNormal(), m_NormalReadback);
+    TransitionResource(commandList, m_ImageTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_DepthTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_NormalTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_DepthMinMaxBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON);
+    m_InputBuffersNeedUavTransition = true;
 
-    D3D12_RESOURCE_BARRIER toShader[2] = {};
-    toShader[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    toShader[0].Transition.pResource = m_RendererCore->GetGBufferDepth();
-    toShader[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    toShader[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    toShader[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-    toShader[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    toShader[1].Transition.pResource = m_RendererCore->GetGBufferNormal();
-    toShader[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    toShader[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    toShader[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-    commandList->ResourceBarrier(2, toShader);
+    TransitionResource(commandList, m_RendererCore->GetLightingBuffer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    TransitionResource(commandList, m_RendererCore->GetGBufferDepth(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_RendererCore->GetGBufferNormal(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     m_RendererCore->ExecuteCommandListAndWait();
     m_RendererCore->ResetCommandList();
-
-    {
-        uint8_t* mapped = nullptr;
-        D3D12_RANGE range = { 0, static_cast<SIZE_T>(m_LightingReadback.totalBytes) };
-        m_LightingReadback.resource->Map(0, &range, reinterpret_cast<void**>(&mapped));
-
-        const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
-        for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-            const uint32_t srcY = SampleSourceCoord(y, m_Config.inputHeight, m_RenderHeight);
-            const uint8_t* row = mapped + static_cast<size_t>(srcY) * m_LightingReadback.footprint.Footprint.RowPitch;
-            for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
-                const uint32_t srcX = SampleSourceCoord(x, m_Config.inputWidth, m_RenderWidth);
-                const uint8_t* pixel = row + srcX * 4;
-                const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
-                m_ImageTensor[idx] = NormalizeByte(pixel[0]);
-                m_ImageTensor[idx + planeSize] = NormalizeByte(pixel[1]);
-                m_ImageTensor[idx + (planeSize * 2)] = NormalizeByte(pixel[2]);
-            }
-        }
-
-        m_LightingReadback.resource->Unmap(0, nullptr);
-    }
-
-    {
-        float* mapped = nullptr;
-        D3D12_RANGE range = { 0, static_cast<SIZE_T>(m_DepthReadback.totalBytes) };
-        m_DepthReadback.resource->Map(0, &range, reinterpret_cast<void**>(&mapped));
-
-        float minDepth = FLT_MAX;
-        float maxDepth = 0.0f;
-        for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-            const uint32_t srcY = SampleSourceCoord(y, m_Config.inputHeight, m_RenderHeight);
-            const uint8_t* rowBytes = reinterpret_cast<const uint8_t*>(mapped) + static_cast<size_t>(srcY) * m_DepthReadback.footprint.Footprint.RowPitch;
-            const float* row = reinterpret_cast<const float*>(rowBytes);
-            for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
-                const uint32_t srcX = SampleSourceCoord(x, m_Config.inputWidth, m_RenderWidth);
-                const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
-                m_DepthTensor[idx] = row[srcX];
-                minDepth = (std::min)(minDepth, row[srcX]);
-                maxDepth = (std::max)(maxDepth, row[srcX]);
-            }
-        }
-
-        const float invRange = (maxDepth > minDepth) ? (1.0f / (maxDepth - minDepth)) : 1.0f;
-        for (float& value : m_DepthTensor) {
-            value = std::clamp((value - minDepth) * invRange, 0.0f, 1.0f);
-        }
-
-        m_DepthReadback.resource->Unmap(0, nullptr);
-    }
-
-    {
-        uint16_t* mapped = nullptr;
-        D3D12_RANGE range = { 0, static_cast<SIZE_T>(m_NormalReadback.totalBytes) };
-        m_NormalReadback.resource->Map(0, &range, reinterpret_cast<void**>(&mapped));
-
-        const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
-        for (uint32_t y = 0; y < m_Config.inputHeight; ++y) {
-            const uint32_t srcY = SampleSourceCoord(y, m_Config.inputHeight, m_RenderHeight);
-            const uint8_t* rowBytes = reinterpret_cast<const uint8_t*>(mapped) + static_cast<size_t>(srcY) * m_NormalReadback.footprint.Footprint.RowPitch;
-            const uint16_t* row = reinterpret_cast<const uint16_t*>(rowBytes);
-            for (uint32_t x = 0; x < m_Config.inputWidth; ++x) {
-                const uint32_t srcX = SampleSourceCoord(x, m_Config.inputWidth, m_RenderWidth);
-                const size_t src = static_cast<size_t>(srcX) * 4;
-                const size_t idx = static_cast<size_t>(y) * m_Config.inputWidth + x;
-                m_NormalTensor[idx] = DirectX::PackedVector::XMConvertHalfToFloat(row[src + 0]);
-                m_NormalTensor[idx + planeSize] = DirectX::PackedVector::XMConvertHalfToFloat(row[src + 1]);
-                m_NormalTensor[idx + (planeSize * 2)] = DirectX::PackedVector::XMConvertHalfToFloat(row[src + 2]);
-            }
-        }
-
-        m_NormalReadback.resource->Unmap(0, nullptr);
-    }
-
     return true;
 }
 
@@ -451,69 +622,54 @@ bool WinMLStyleTransferSystem::RunInference()
             return false;
         }
 
-        std::vector<int64_t> imageShapeData = {
+        winrt::com_ptr<ITensorStaticsNative> tensorFactory =
+            winrt::get_activation_factory<winrt::Windows::AI::MachineLearning::TensorFloat, ITensorStaticsNative>();
+
+        const int64_t imageShape[] = {
             1,
             3,
             static_cast<int64_t>(m_Config.inputHeight),
             static_cast<int64_t>(m_Config.inputWidth)
         };
-        std::vector<int64_t> depthShapeData = {
+        const int64_t depthShape[] = {
             1,
             1,
             static_cast<int64_t>(m_Config.inputHeight),
             static_cast<int64_t>(m_Config.inputWidth)
         };
 
-        auto imageShape = winrt::single_threaded_vector<int64_t>(std::move(imageShapeData));
-        auto depthShape = winrt::single_threaded_vector<int64_t>(std::move(depthShapeData));
+        auto createTensorFromResource =
+            [&](ID3D12Resource* resource, const int64_t* shape, int shapeCount)
+            -> winrt::Windows::AI::MachineLearning::TensorFloat
+        {
+            winrt::com_ptr<IUnknown> tensorUnknown;
+            ThrowIfFailed(tensorFactory->CreateFromD3D12Resource(resource, const_cast<int64_t*>(shape), shapeCount, tensorUnknown.put()));
+            return tensorUnknown.as<winrt::Windows::AI::MachineLearning::TensorFloat>();
+        };
 
-        auto imageTensor = winrt::Windows::AI::MachineLearning::TensorFloat::CreateFromArray(
-            imageShape,
-            winrt::array_view<const float>(m_ImageTensor));
-        auto depthTensor = winrt::Windows::AI::MachineLearning::TensorFloat::CreateFromArray(
-            depthShape,
-            winrt::array_view<const float>(m_DepthTensor));
-        auto normalTensor = winrt::Windows::AI::MachineLearning::TensorFloat::CreateFromArray(
-            imageShape,
-            winrt::array_view<const float>(m_NormalTensor));
+        auto imageTensor = createTensorFromResource(m_ImageTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
+        auto depthTensor = createTensorFromResource(m_DepthTensorBuffer.resource.Get(), depthShape, _countof(depthShape));
+        auto normalTensor = createTensorFromResource(m_NormalTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
+        auto outputTensor = createTensorFromResource(m_OutputTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
+
+        winrt::Windows::Foundation::Collections::PropertySet outputBindProperties;
+        outputBindProperties.Insert(L"DisableTensorCpuSync", winrt::box_value(true));
 
         m_Binding.Clear();
         m_Binding.Bind(m_InputNames[0], imageTensor);
         m_Binding.Bind(m_InputNames[1], depthTensor);
         m_Binding.Bind(m_InputNames[2], normalTensor);
+        m_Binding.Bind(m_OutputName, outputTensor, outputBindProperties);
 
-        auto result = m_Session.Evaluate(m_Binding, L"LulludensWinML");
-        auto outputFeature = result.Outputs().Lookup(m_OutputName);
-        auto outputTensor = outputFeature.as<winrt::Windows::AI::MachineLearning::TensorFloat>();
-        auto outputView = outputTensor.GetAsVectorView();
-
-        const size_t planeSize = static_cast<size_t>(m_Config.inputWidth) * m_Config.inputHeight;
-        const uint32_t expectedValues = static_cast<uint32_t>(planeSize * 3);
-        if (outputView.Size() < expectedValues) {
-            std::ostringstream stream;
-            stream << "[WinML] Output tensor is smaller than expected. size=" << outputView.Size()
-                   << ", expected=" << expectedValues << "\n";
-            DebugLogA(stream.str());
-            return false;
-        }
-
-        for (uint32_t y = 0; y < m_RenderHeight; ++y) {
-            const uint32_t modelY = SampleSourceCoord(y, m_RenderHeight, m_Config.inputHeight);
-            for (uint32_t x = 0; x < m_RenderWidth; ++x) {
-                const uint32_t modelX = SampleSourceCoord(x, m_RenderWidth, m_Config.inputWidth);
-                const size_t modelIdx = static_cast<size_t>(modelY) * m_Config.inputWidth + modelX;
-                const size_t dst = (static_cast<size_t>(y) * m_RenderWidth + x) * 4;
-                m_OutputPixels[dst + 0] = FloatToByte(outputView.GetAt(static_cast<uint32_t>(modelIdx)));
-                m_OutputPixels[dst + 1] = FloatToByte(outputView.GetAt(static_cast<uint32_t>(modelIdx + planeSize)));
-                m_OutputPixels[dst + 2] = FloatToByte(outputView.GetAt(static_cast<uint32_t>(modelIdx + planeSize * 2)));
-                m_OutputPixels[dst + 3] = 255;
-            }
-        }
-
+        m_Session.Evaluate(m_Binding, L"LulludensWinML");
         return true;
     }
     catch (const winrt::hresult_error& ex) {
         DebugLogA(std::string("[WinML] Inference HRESULT exception: ") + winrt::to_string(ex.message()) + "\n");
+        return false;
+    }
+    catch (const std::exception& ex) {
+        DebugLogA(std::string("[WinML] Inference standard exception: ") + ex.what() + "\n");
         return false;
     }
 #else
@@ -521,51 +677,52 @@ bool WinMLStyleTransferSystem::RunInference()
 #endif
 }
 
+void WinMLStyleTransferSystem::DispatchOutputDetensorization()
+{
+    auto* commandList = m_RendererCore->GetCommandList();
+    const std::array<uint32_t, 4> constants = {
+        m_Config.inputWidth,
+        m_Config.inputHeight,
+        m_RenderWidth,
+        m_RenderHeight
+    };
+
+    ID3D12DescriptorHeap* heaps[] = { m_DetensorizeHeap.Get() };
+    commandList->SetDescriptorHeaps(1, heaps);
+    commandList->SetComputeRootSignature(m_DetensorizeRootSignature.Get());
+    commandList->SetComputeRoot32BitConstants(0, static_cast<UINT>(constants.size()), constants.data(), 0);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_DetensorizeHeap->GetGPUDescriptorHandleForHeapStart();
+    commandList->SetComputeRootDescriptorTable(1, srvHandle);
+
+    const UINT descriptorSize = m_RendererCore->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
+    uavHandle.ptr += descriptorSize;
+    commandList->SetComputeRootDescriptorTable(2, uavHandle);
+
+    commandList->SetPipelineState(m_DetensorizePSO.Get());
+    commandList->Dispatch((m_RenderWidth + (kThreadsX - 1)) / kThreadsX, (m_RenderHeight + (kThreadsY - 1)) / kThreadsY, 1);
+}
+
 bool WinMLStyleTransferSystem::UploadOutput()
 {
-    uint8_t* mapped = nullptr;
-    D3D12_RANGE readRange = { 0, 0 };
-    m_OutputUpload.resource->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
-
-    for (uint32_t y = 0; y < m_RenderHeight; ++y) {
-        uint8_t* row = mapped + static_cast<size_t>(y) * m_OutputUpload.footprint.Footprint.RowPitch;
-        const uint8_t* src = m_OutputPixels.data() + static_cast<size_t>(y) * m_RenderWidth * 4;
-        memcpy(row, src, static_cast<size_t>(m_RenderWidth) * 4);
-    }
-
-    m_OutputUpload.resource->Unmap(0, nullptr);
-
     auto* commandList = m_RendererCore->GetCommandList();
 
+    TransitionResource(commandList, m_OutputTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
     if (m_OutputReady) {
-        D3D12_RESOURCE_BARRIER toCopyDest = {};
-        toCopyDest.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        toCopyDest.Transition.pResource = m_OutputTexture.Get();
-        toCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-        toCopyDest.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
-        toCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        commandList->ResourceBarrier(1, &toCopyDest);
+        TransitionResource(commandList, m_OutputTexture.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
 
-    D3D12_TEXTURE_COPY_LOCATION dst = {};
-    dst.pResource = m_OutputTexture.Get();
-    dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-    dst.SubresourceIndex = 0;
+    DispatchOutputDetensorization();
 
-    D3D12_TEXTURE_COPY_LOCATION src = {};
-    src.pResource = m_OutputUpload.resource.Get();
-    src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-    src.PlacedFootprint = m_OutputUpload.footprint;
+    D3D12_RESOURCE_BARRIER uavBarrier = {};
+    uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    uavBarrier.UAV.pResource = m_OutputTexture.Get();
+    commandList->ResourceBarrier(1, &uavBarrier);
 
-    commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-
-    D3D12_RESOURCE_BARRIER toCopySource = {};
-    toCopySource.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    toCopySource.Transition.pResource = m_OutputTexture.Get();
-    toCopySource.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-    toCopySource.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    toCopySource.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    commandList->ResourceBarrier(1, &toCopySource);
+    TransitionResource(commandList, m_OutputTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    TransitionResource(commandList, m_OutputTexture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
     m_OutputReady = true;
     return true;

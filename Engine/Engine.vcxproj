@@ -245,6 +245,11 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Renderer\Shaders\StyleTransferTensor.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
     <None Include="Renderer\Shaders\Skybox.hlsl">
       <FileType>Document</FileType>
     </None>

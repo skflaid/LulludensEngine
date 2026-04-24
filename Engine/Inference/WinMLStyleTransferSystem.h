@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/ISystem.h"
+#include "..\..\Common\d3dUtil.h"
 #include <d3d12.h>
 #include <wrl/client.h>
 #include <cstdint>
@@ -15,6 +16,7 @@ class RendererCore;
 #include <winrt/base.h>
 #include <winrt/Windows.AI.MachineLearning.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <windows.ai.machinelearning.native.h>
 #endif
 
 class WinMLStyleTransferSystem : public ISystem
@@ -38,22 +40,24 @@ public:
     bool IsReady() const { return m_BackendReady && m_ModelReady; }
     ID3D12Resource* GetOutputTexture() const { return m_OutputTexture.Get(); }
 
-private:
-    struct StagingBuffer
+    struct GpuBuffer
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
-        UINT numRows = 0;
-        UINT64 rowSizeInBytes = 0;
-        UINT64 totalBytes = 0;
+        uint32_t elementCount = 0;
+        uint32_t elementStride = 0;
     };
 
+private:
     void CreateOutputTexture();
-    void CreateStagingBuffers();
+    void CreateTensorResources();
+    void CreateComputePipeline();
+    void CreateDescriptorHeaps();
     bool LoadBackend();
     bool CaptureInputs();
     bool RunInference();
     bool UploadOutput();
+    void DispatchTensorization();
+    void DispatchOutputDetensorization();
     std::wstring GetDefaultModelPath() const;
 
 private:
@@ -63,19 +67,25 @@ private:
     uint32_t m_RenderHeight = 0;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> m_OutputTexture;
-    StagingBuffer m_LightingReadback;
-    StagingBuffer m_DepthReadback;
-    StagingBuffer m_NormalReadback;
-    StagingBuffer m_OutputUpload;
+    GpuBuffer m_ImageTensorBuffer;
+    GpuBuffer m_DepthTensorBuffer;
+    GpuBuffer m_NormalTensorBuffer;
+    GpuBuffer m_OutputTensorBuffer;
+    GpuBuffer m_DepthMinMaxBuffer;
 
-    std::vector<float> m_ImageTensor;
-    std::vector<float> m_DepthTensor;
-    std::vector<float> m_NormalTensor;
-    std::vector<uint8_t> m_OutputPixels;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_TensorizeHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_DetensorizeHeap;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_TensorizeRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_DetensorizeRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ResetDepthMinMaxPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_TensorizePSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_NormalizeDepthPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_DetensorizePSO;
 
     bool m_BackendReady = false;
     bool m_ModelReady = false;
     bool m_OutputReady = false;
+    bool m_InputBuffersNeedUavTransition = false;
 
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     winrt::Windows::AI::MachineLearning::LearningModel m_Model{ nullptr };
