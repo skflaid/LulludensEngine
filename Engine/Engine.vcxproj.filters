@@ -46,6 +46,9 @@
     <Filter Include="Header Files\Physics\Systems">
       <UniqueIdentifier>{840A63DD-7B76-4DDA-BB17-E62ED41D0724}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Physics\Threading">
+      <UniqueIdentifier>{60224F6C-9A93-41E1-BB13-0426C1F76F93}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\Renderer">
       <UniqueIdentifier>{5EBA1DA2-9A2D-4BFC-B0D4-2A0845E602C3}</UniqueIdentifier>
     </Filter>
@@ -66,6 +69,21 @@
     </Filter>
     <Filter Include="Header Files\Renderer\Systems">
       <UniqueIdentifier>{7C736398-BBB6-4D22-8E74-C957B17B3189}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Renderer\Threading">
+      <UniqueIdentifier>{37A40FC3-8334-47A0-8A7F-5543D38E6E02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Threading">
+      <UniqueIdentifier>{33A84EB4-C033-4EC9-AC7C-A7B14074989E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Threading">
+      <UniqueIdentifier>{F0A7D983-2E8A-424D-8B4C-31D5C7B984D0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Physics\Threading">
+      <UniqueIdentifier>{56A3B82C-E3DC-42B1-A34C-8F4B8D2FD345}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Renderer\Threading">
+      <UniqueIdentifier>{F6A00519-1E35-4661-B354-E9116F8E97C0}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -108,6 +126,9 @@
     <ClInclude Include="Core\Entity.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
+    <ClInclude Include="Core\EngineTypes.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
     <ClInclude Include="Core\FBXLoader.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
@@ -140,7 +161,16 @@
       <Filter>Header Files\Physics\Components</Filter>
     </ClInclude>
     <ClInclude Include="Physics\PhysicsScheduler.h">
-      <Filter>Header Files\Physics</Filter>
+      <Filter>Header Files\Physics\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\PhysicsSnapshot.h">
+      <Filter>Header Files\Physics\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\PhysicsSubstepController.h">
+      <Filter>Header Files\Physics\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Physics\PhysicsThreadContext.h">
+      <Filter>Header Files\Physics\Threading</Filter>
     </ClInclude>
     <ClInclude Include="Physics\PhysicsWorld.h">
       <Filter>Header Files\Physics</Filter>
@@ -181,6 +211,33 @@
     <ClInclude Include="Renderer\RendererCore.h">
       <Filter>Header Files\Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="Renderer\CameraState.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\D3D12RenderContext.h">
+      <Filter>Header Files\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\FrameResource.h">
+      <Filter>Header Files\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RenderCommand.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RenderCommandQueue.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RenderSnapshot.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RenderSnapshotBuilder.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\RenderThreadContext.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\TransformInterpolator.h">
+      <Filter>Header Files\Renderer\Threading</Filter>
+    </ClInclude>
     <ClInclude Include="Renderer\Systems\AnimationSystem.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -198,6 +255,18 @@
     </ClInclude>
     <ClInclude Include="Renderer\Systems\SkyRenderer.h">
       <Filter>Header Files\Renderer\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="Threading\FixedTimeStep.h">
+      <Filter>Header Files\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Threading\GameThreadContext.h">
+      <Filter>Header Files\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Threading\SnapshotBuffer.h">
+      <Filter>Header Files\Threading</Filter>
+    </ClInclude>
+    <ClInclude Include="Threading\ThreadManager.h">
+      <Filter>Header Files\Threading</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -248,7 +317,16 @@
     </ClCompile>
     <ClCompile Include="Inference\WinMLStyleTransferSystem.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp">
-      <Filter>Source Files\Physics</Filter>
+      <Filter>Source Files\Physics\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\PhysicsSnapshot.cpp">
+      <Filter>Source Files\Physics\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\PhysicsSubstepController.cpp">
+      <Filter>Source Files\Physics\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Physics\PhysicsThreadContext.cpp">
+      <Filter>Source Files\Physics\Threading</Filter>
     </ClCompile>
     <ClCompile Include="Physics\PhysicsWorld.cpp">
       <Filter>Source Files\Physics</Filter>
@@ -265,6 +343,21 @@
     <ClCompile Include="Renderer\RendererCore.cpp">
       <Filter>Source Files\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Renderer\CameraState.cpp">
+      <Filter>Source Files\Renderer\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\RenderCommandQueue.cpp">
+      <Filter>Source Files\Renderer\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\RenderSnapshot.cpp">
+      <Filter>Source Files\Renderer\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\RenderSnapshotBuilder.cpp">
+      <Filter>Source Files\Renderer\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\RenderThreadContext.cpp">
+      <Filter>Source Files\Renderer\Threading</Filter>
+    </ClCompile>
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -279,6 +372,21 @@
     </ClCompile>
     <ClCompile Include="Renderer\Systems\SkyRenderer.cpp">
       <Filter>Source Files\Renderer\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\TransformInterpolator.cpp">
+      <Filter>Source Files\Renderer\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Threading\FixedTimeStep.cpp">
+      <Filter>Source Files\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Threading\GameThreadContext.cpp">
+      <Filter>Source Files\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Threading\SnapshotBuffer.cpp">
+      <Filter>Source Files\Threading</Filter>
+    </ClCompile>
+    <ClCompile Include="Threading\ThreadManager.cpp">
+      <Filter>Source Files\Threading</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

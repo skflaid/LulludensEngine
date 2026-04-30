@@ -144,6 +144,7 @@
     <ClInclude Include="App\EntityInspector.h" />
     <ClInclude Include="App\GameEngine.h" />
     <ClInclude Include="Core\Entity.h" />
+    <ClInclude Include="Core\EngineTypes.h" />
     <ClInclude Include="Core\FBXLoader.h" />
     <ClInclude Include="Core\IComponent.h" />
     <ClInclude Include="Core\ISystem.h" />
@@ -156,9 +157,13 @@
     <ClInclude Include="Physics\Components\RigidbodyComponent.h" />
     <ClInclude Include="Physics\Components\SoftBodyComponent.h" />
     <ClInclude Include="Physics\PhysicsScheduler.h" />
+    <ClInclude Include="Physics\PhysicsSnapshot.h" />
+    <ClInclude Include="Physics\PhysicsSubstepController.h" />
+    <ClInclude Include="Physics\PhysicsThreadContext.h" />
     <ClInclude Include="Physics\PhysicsWorld.h" />
     <ClInclude Include="Physics\Systems\CollisionSystem.h" />
     <ClInclude Include="Physics\Systems\DynamicsSystem.h" />
+    <ClInclude Include="Renderer\CameraState.h" />
     <ClInclude Include="Renderer\Components\CameraComponent.h" />
     <ClInclude Include="Renderer\Components\MaterialComponent.h" />
     <ClInclude Include="Renderer\Components\MeshComponent.h" />
@@ -167,14 +172,26 @@
     <ClInclude Include="Renderer\Components\SkeletonComponent.h" />
     <ClInclude Include="Renderer\Components\TransformAnimationComponent.h" />
     <ClInclude Include="Renderer\Components\TransformComponent.h" />
+    <ClInclude Include="Renderer\D3D12RenderContext.h" />
+    <ClInclude Include="Renderer\FrameResource.h" />
     <ClInclude Include="Renderer\Model.h" />
+    <ClInclude Include="Renderer\RenderCommand.h" />
+    <ClInclude Include="Renderer\RenderCommandQueue.h" />
     <ClInclude Include="Renderer\RendererCore.h" />
+    <ClInclude Include="Renderer\RenderSnapshot.h" />
+    <ClInclude Include="Renderer\RenderSnapshotBuilder.h" />
+    <ClInclude Include="Renderer\RenderThreadContext.h" />
     <ClInclude Include="Renderer\Systems\AnimationSystem.h" />
     <ClInclude Include="Renderer\Systems\CameraSystem.h" />
     <ClInclude Include="Renderer\Systems\EnvironmentManager.h" />
     <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
     <ClInclude Include="Renderer\Systems\SkyRenderer.h" />
+    <ClInclude Include="Renderer\TransformInterpolator.h" />
+    <ClInclude Include="Threading\FixedTimeStep.h" />
+    <ClInclude Include="Threading\GameThreadContext.h" />
+    <ClInclude Include="Threading\SnapshotBuffer.h" />
+    <ClInclude Include="Threading\ThreadManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\Camera.cpp" />
@@ -194,16 +211,29 @@
     <ClCompile Include="Core\InputManager.cpp" />
     <ClCompile Include="Inference\WinMLStyleTransferSystem.cpp" />
     <ClCompile Include="Physics\PhysicsScheduler.cpp" />
+    <ClCompile Include="Physics\PhysicsSnapshot.cpp" />
+    <ClCompile Include="Physics\PhysicsSubstepController.cpp" />
+    <ClCompile Include="Physics\PhysicsThreadContext.cpp" />
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
     <ClCompile Include="Physics\Systems\DynamicsSystem.cpp" />
+    <ClCompile Include="Renderer\CameraState.cpp" />
     <ClCompile Include="Renderer\Components\MeshComponent.cpp" />
+    <ClCompile Include="Renderer\RenderCommandQueue.cpp" />
     <ClCompile Include="Renderer\RendererCore.cpp" />
+    <ClCompile Include="Renderer\RenderSnapshot.cpp" />
+    <ClCompile Include="Renderer\RenderSnapshotBuilder.cpp" />
+    <ClCompile Include="Renderer\RenderThreadContext.cpp" />
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp" />
     <ClCompile Include="Renderer\Systems\CameraSystem.cpp" />
     <ClCompile Include="Renderer\Systems\EnvironmentManager.cpp" />
     <ClCompile Include="Renderer\Systems\RenderSystem.cpp" />
     <ClCompile Include="Renderer\Systems\SkyRenderer.cpp" />
+    <ClCompile Include="Renderer\TransformInterpolator.cpp" />
+    <ClCompile Include="Threading\FixedTimeStep.cpp" />
+    <ClCompile Include="Threading\GameThreadContext.cpp" />
+    <ClCompile Include="Threading\SnapshotBuffer.cpp" />
+    <ClCompile Include="Threading\ThreadManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Models\car.txt" />

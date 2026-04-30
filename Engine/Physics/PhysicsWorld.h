@@ -3,6 +3,7 @@
 #pragma once
 #include "Core/Entity.h"
 #include "Core/ISystem.h"
+#include "Physics/PhysicsSnapshot.h"
 #include <vector>
 #include <memory>
 #include <DirectXMath.h>
@@ -22,6 +23,8 @@ public:
     void UnregisterEntity(Entity* entity);
 
     void AddSystem(std::unique_ptr<ISystem> system);
+    // Called after a physics tick to package render-safe state.
+    PhysicsSnapshot CreateSnapshot(uint64_t tickIndex, double simulationTimeSeconds) const;
 
     void SetGravity(const XMFLOAT3& gravity) { m_Gravity = gravity; }
     const XMFLOAT3& GetGravity() const { return m_Gravity; }

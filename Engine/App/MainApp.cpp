@@ -3,6 +3,7 @@
 #include "GameEngine.h"
 #include "EntityInspector.h"
 #include "Core/InputManager.h"
+#include <mutex>
 
 // ���� �������� ���� (�ٸ� ��⿡�� ������ �� �����Ƿ� �̸� �״��)
 GameEngine g_Engine;
@@ -97,7 +98,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     QueryPerformanceCounter(&last);
 
     float fpsTimer = 0.0f;
-    int frameCount = 0;
+    uint64_t lastGameFrames = g_Engine.GetGameFrameCount();
+    uint64_t lastRenderFrames = g_Engine.GetRenderFrameCount();
+    uint64_t lastPhysicsTicks = g_Engine.GetPhysicsTickCount();
 
     while (g_Running)
     {
@@ -112,24 +115,41 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         last = cur;
 
         fpsTimer += dt;
-        frameCount++;
 
         if (fpsTimer >= 1.0f)
         {
-            float fps = frameCount / fpsTimer;
+            const uint64_t gameFrames = g_Engine.GetGameFrameCount();
+            const uint64_t renderFrames = g_Engine.GetRenderFrameCount();
+            const uint64_t physicsTicks = g_Engine.GetPhysicsTickCount();
+
+            const float gameFps = static_cast<float>(gameFrames - lastGameFrames) / fpsTimer;
+            const float renderFps = static_cast<float>(renderFrames - lastRenderFrames) / fpsTimer;
+            const float physicsHz = static_cast<float>(physicsTicks - lastPhysicsTicks) / fpsTimer;
 
             wchar_t title[256];
-            swprintf_s(title, L"Game Engine - FPS: %.2f", fps);
+            swprintf_s(
+                title,
+                L"Lulludens Engine - Game: %.1f FPS | Render: %.1f FPS | Physics: %.1f Hz",
+                gameFps,
+                renderFps,
+                physicsHz);
             SetWindowText(g_Hwnd, title);
 
-            frameCount = 0;
+            lastGameFrames = gameFrames;
+            lastRenderFrames = renderFrames;
+            lastPhysicsTicks = physicsTicks;
             fpsTimer = 0.0f;
         }
 
         g_Engine.Update(dt);
         g_Engine.Render();
 
-        g_Inspector.Update(&g_Engine);
+        {
+            // Inspector reads live engine/ECS state, so keep it serialized with
+            // worker updates until finer-grained ownership is introduced.
+            std::lock_guard<std::mutex> lock(g_Engine.GetStateMutex());
+            g_Inspector.Update(&g_Engine);
+        }
     }
 
     g_Engine.Shutdown();

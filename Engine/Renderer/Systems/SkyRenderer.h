@@ -1,4 +1,5 @@
 #pragma once
+#include "Renderer/FrameResource.h"
 #include "Renderer/Systems/RenderConstants.h"
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -6,6 +7,7 @@
 using Microsoft::WRL::ComPtr;
 
 class RendererCore;
+struct CameraRenderState;
 struct CameraComponent;
 struct SkyComponent;
 struct TextureInfo;
@@ -19,6 +21,12 @@ public:
     void Render(
         ID3D12GraphicsCommandList* commandList,
         const CameraComponent& camera,
+        const SkyComponent& sky,
+        const TextureInfo& cubemap,
+        UINT frameIndex);
+    void Render(
+        ID3D12GraphicsCommandList* commandList,
+        const CameraRenderState& camera,
         const SkyComponent& sky,
         const TextureInfo& cubemap,
         UINT frameIndex);
@@ -37,7 +45,7 @@ private:
     void CreateConstantBuffer();
 
 private:
-    static constexpr UINT FrameCount = 2;
+    static constexpr UINT FrameCount = RendererFrameCount;
     static constexpr UINT TextureHeapStartIndex = 8;
 
     RendererCore* m_RendererCore = nullptr;

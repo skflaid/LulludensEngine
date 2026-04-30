@@ -12,6 +12,8 @@
 #include "Core/TextureManager.h"
 #include "EnvironmentManager.h"
 #include "SkyRenderer.h"
+#include "Threading/SnapshotBuffer.h"
+#include <algorithm>
 
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -982,6 +984,17 @@ void RenderSystem::RegisterEntity(Entity* entity) {
     if (entity->HasComponent<MeshComponent>() && entity->HasComponent<TransformComponent>()) {
         m_RenderableEntities.push_back(entity);
 
+        // Producer side of the render command flow: game/setup code records the
+        // entity data, then the render thread applies it in ProcessRenderCommands().
+        RenderCommand command;
+        command.Type = RenderCommandType::RegisterEntity;
+        command.Id = entity->GetID();
+        command.Transform = entity->GetComponent<TransformComponent>();
+        command.Mesh = entity->GetComponent<MeshComponent>();
+        command.Material = entity->GetComponent<MaterialComponent>();
+        command.Active = entity->IsActive();
+        m_RenderCommandQueue.Push(std::move(command));
+
         // GPU??硫붿떆 ?낅줈??
         auto* meshComp = entity->GetComponent<MeshComponent>();
         if (meshComp && meshComp->isLoaded && !meshComp->vertexBuffer) {
@@ -1028,6 +1041,14 @@ void RenderSystem::RegisterEntity(Entity* entity) {
 
 void RenderSystem::UnregisterEntity(Entity* entity) {
     m_RenderableEntities.erase(std::remove(m_RenderableEntities.begin(), m_RenderableEntities.end(), entity), m_RenderableEntities.end());
+
+    if (entity) {
+        // Defer render-proxy removal to the render thread.
+        RenderCommand command;
+        command.Type = RenderCommandType::UnregisterEntity;
+        command.Id = entity->GetID();
+        m_RenderCommandQueue.Push(std::move(command));
+    }
 }
 
 void RenderSystem::SetActiveSky(Entity* skyEntity)
@@ -1038,9 +1059,16 @@ void RenderSystem::SetActiveSky(Entity* skyEntity)
 }
 
 void RenderSystem::Render() {
+    // Render-thread frame order:
+    // 1) apply queued render commands,
+    // 2) build value snapshots from physics/game state,
+    // 3) submit all GPU passes using render-owned data.
+    ProcessRenderCommands();
+    RefreshRenderSnapshot();
+
     m_RendererCore->BeginFrame();
 
-    UINT frameIndex = 0;
+    const UINT frameIndex = m_RendererCore->GetFrameIndex();
     UpdatePassConstants(frameIndex);
 
     RenderShadowPass(frameIndex);
@@ -1063,7 +1091,13 @@ void RenderSystem::Render() {
     RenderSkyPass(frameIndex);
 
     // 추론이 가능하면 스타일 결과를, 아니면 원본 lighting 결과를 바로 출력한다.
-    if (m_IsStyleTransferEnabled &&
+    bool styleTransferEnabled = false;
+    {
+        std::lock_guard<std::mutex> lock(m_SettingsMutex);
+        styleTransferEnabled = m_IsStyleTransferEnabled;
+    }
+
+    if (styleTransferEnabled &&
         m_WinMLStyleTransferSystem &&
         m_WinMLStyleTransferSystem->Execute()) {
         CopyFrameToBackBuffer(m_WinMLStyleTransferSystem->GetOutputTexture());
@@ -1101,10 +1135,10 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     int objectIndex = 0;
-    for (Entity* entity : m_RenderableEntities) {
-        if (entity && entity->IsActive()) {
+    for (const RenderProxy& proxy : m_RenderProxies) {
+        if (proxy.Active) {
             // Object/Material/Pass CBV ?뗭뾽 + draw
-            RenderEntity(entity, frameIndex, objectIndex);
+            RenderProxyItem(proxy, frameIndex, objectIndex, FindSnapshotWorld(proxy.Id));
             ++objectIndex;
         }
     }
@@ -1205,9 +1239,9 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
 
     // Render entities
     int objectIndex = 0;
-    for (Entity* entity : m_RenderableEntities) {
-        if (entity && entity->IsActive()) {
-            RenderEntity(entity, frameIndex, objectIndex);
+    for (const RenderProxy& proxy : m_RenderProxies) {
+        if (proxy.Active) {
+            RenderProxyItem(proxy, frameIndex, objectIndex, FindSnapshotWorld(proxy.Id));
             objectIndex++;
         }
     }
@@ -1377,6 +1411,16 @@ void RenderSystem::RenderSkyPass(UINT frameIndex)
         return;
     }
 
+    if (m_CurrentRenderSnapshot.HasCamera()) {
+        m_SkyRenderer->Render(
+            m_RendererCore->GetCommandList(),
+            m_CurrentRenderSnapshot.GetCamera(),
+            *sky,
+            *cubemap,
+            frameIndex);
+        return;
+    }
+
     Entity* cameraEntity = m_Engine->GetMainCamera();
     if (!cameraEntity) {
         return;
@@ -1396,6 +1440,8 @@ void RenderSystem::RenderSkyPass(UINT frameIndex)
 }
 
 void RenderSystem::ToggleRenderMode() {
+    std::lock_guard<std::mutex> lock(m_SettingsMutex);
+
     switch (m_RenderMode) {
     case RenderMode::Composite:
         m_RenderMode = RenderMode::Lighting;
@@ -1410,7 +1456,13 @@ void RenderSystem::ToggleRenderMode() {
 }
 
 void RenderSystem::ToggleStyleTransfer() {
+    std::lock_guard<std::mutex> lock(m_SettingsMutex);
     m_IsStyleTransferEnabled = !m_IsStyleTransferEnabled;
+}
+
+RenderMode RenderSystem::GetRenderMode() const {
+    std::lock_guard<std::mutex> lock(m_SettingsMutex);
+    return m_RenderMode;
 }
 
 void RenderSystem::RenderSSGIPass(UINT frameIndex) {
@@ -1568,6 +1620,15 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     PassConstants passConstants = {};
     
     // GameEngine?먯꽌 硫붿씤 移대찓?쇰? 媛?몄샃?덈떎.
+    XMMATRIX V = XMMatrixIdentity();
+    XMMATRIX P = XMMatrixIdentity();
+
+    if (m_CurrentRenderSnapshot.HasCamera()) {
+        const CameraRenderState& camera = m_CurrentRenderSnapshot.GetCamera();
+        V = XMLoadFloat4x4(&camera.View);
+        P = XMLoadFloat4x4(&camera.Proj);
+    }
+    else {
     Entity* mainCamera = m_Engine->GetMainCamera();
     if (!mainCamera) {
         // 移대찓?쇨? ?놁쑝硫??뚮뜑留?以묐떒 (?먮뒗 湲곕낯 ?됰젹 ?ъ슜)
@@ -1578,8 +1639,9 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     if (!cameraComp) return;
 
     // RenderSystem??硫ㅻ쾭 蹂????? CameraComponent???됰젹??吏곸젒 媛?몄샃?덈떎.
-    XMMATRIX V = XMLoadFloat4x4(&cameraComp->ViewMatrix);
-    XMMATRIX P = XMLoadFloat4x4(&cameraComp->ProjMatrix);
+    V = XMLoadFloat4x4(&cameraComp->ViewMatrix);
+    P = XMLoadFloat4x4(&cameraComp->ProjMatrix);
+    }
     XMMATRIX VP = XMMatrixMultiply(V, P);
     
     XMStoreFloat4x4(&passConstants.gView, XMMatrixTranspose(V));
@@ -1651,7 +1713,10 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gTotalTime = m_TotalTime;
     passConstants.gDeltaTime = m_DeltaTime;
     passConstants.gAmbientLight = m_AmbientLight;
-    passConstants.gRenderMode = static_cast<int>(m_RenderMode);
+    {
+        std::lock_guard<std::mutex> lock(m_SettingsMutex);
+        passConstants.gRenderMode = static_cast<int>(m_RenderMode);
+    }
     passConstants.cbPerObjectPad3 = 0.0f;
     passConstants.cbPerObjectPad4 = XMFLOAT2(0.0f, 0.0f);
     
@@ -1705,6 +1770,10 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
 }
 
 void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex) {
+    RenderEntity(entity, frameIndex, objectIndex, FindSnapshotWorld(entity->GetID()));
+}
+
+void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld) {
     auto transform = entity->GetComponent<TransformComponent>();
     auto mesh = entity->GetComponent<MeshComponent>();
     auto material = entity->GetComponent<MaterialComponent>();
@@ -1716,7 +1785,7 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
     auto commandList = m_RendererCore->GetCommandList();
 
     ObjectConstants objConstants = {};
-    XMMATRIX W = transform->GetWorldMatrix();
+    XMMATRIX W = snapshotWorld ? XMLoadFloat4x4(snapshotWorld) : transform->GetWorldMatrix();
     XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
     XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
     XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
@@ -1807,4 +1876,240 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
     else {
         bindAndDrawSubmesh(0u, static_cast<uint32_t>(mesh->indices.size()), material->albedoTextureName, material->normalTextureName);
     }
+}
+
+void RenderSystem::RenderProxyItem(const RenderProxy& proxy, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld)
+{
+    auto transform = proxy.Transform;
+    auto mesh = proxy.Mesh;
+    auto material = proxy.Material;
+
+    if (!transform || !mesh || !material || !mesh->vertexBuffer) {
+        return;
+    }
+
+    auto commandList = m_RendererCore->GetCommandList();
+
+    ObjectConstants objConstants = {};
+    XMMATRIX W = snapshotWorld ? XMLoadFloat4x4(snapshotWorld) : transform->GetWorldMatrix();
+    XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
+    XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
+    XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
+
+    memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize),
+        &objConstants, sizeof(ObjectConstants));
+
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = m_ObjectConstantBuffers[frameIndex]->GetGPUVirtualAddress()
+        + (objectIndex * m_ObjectConstantBufferSize);
+    commandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+
+    RenderMaterialConstants matConstants = {};
+    matConstants.gDiffuseAlbedo = material->albedo;
+
+    XMFLOAT3 dielectricF0 = XMFLOAT3(0.04f, 0.04f, 0.04f);
+    XMVECTOR f0Dielectric = XMLoadFloat3(&dielectricF0);
+    XMVECTOR f0Metal = XMLoadFloat4(&material->albedo);
+    XMVECTOR f0 = XMVectorLerp(f0Dielectric, f0Metal, material->metallic);
+    XMStoreFloat3(&matConstants.gFresnelR0, f0);
+
+    matConstants.gRoughness = material->roughness;
+    XMStoreFloat4x4(&matConstants.gMatTransform, XMMatrixIdentity());
+
+    memcpy(m_MaterialConstantBufferDataBegin[frameIndex] + (objectIndex * m_MaterialConstantBufferSize),
+        &matConstants, sizeof(RenderMaterialConstants));
+
+    D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = m_MaterialConstantBuffers[frameIndex]->GetGPUVirtualAddress()
+        + (objectIndex * m_MaterialConstantBufferSize);
+    commandList->SetGraphicsRootConstantBufferView(1, matCBAddress);
+
+    if (objectIndex == 0) {
+        D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+        commandList->SetGraphicsRootConstantBufferView(2, passCBAddress);
+    }
+
+    D3D12_GPU_VIRTUAL_ADDRESS skinCBAddress =
+        m_SkinningConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetGraphicsRootConstantBufferView(3, skinCBAddress);
+
+    ID3D12DescriptorHeap* srvHeaps[] = { m_RendererCore->GetGBufferSRVHeap() };
+    commandList->SetDescriptorHeaps(1, srvHeaps);
+    commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);
+    commandList->IASetIndexBuffer(&mesh->indexBufferView);
+
+    auto textureManager = TextureManager::Get();
+    D3D12_GPU_DESCRIPTOR_HANDLE baseHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
+    UINT descriptorSize = m_RendererCore->GetGBufferSRVDescriptorSize();
+
+    auto bindAndDrawSubmesh = [&](uint32_t startIndex, uint32_t indexCount, const std::string& albedoTextureName, const std::string& normalTextureName) {
+        TextureInfo* albedoTexture = textureManager->GetTexture(albedoTextureName);
+        if (!albedoTexture || !albedoTexture->IsValid) {
+            albedoTexture = textureManager->GetTexture("white1x1");
+        }
+
+        TextureInfo* normalTexture = textureManager->GetTexture(normalTextureName);
+        if (!normalTexture || !normalTexture->IsValid) {
+            normalTexture = textureManager->GetTexture("white1x1");
+        }
+
+        if (!albedoTexture || !normalTexture || !albedoTexture->IsValid || !normalTexture->IsValid) {
+#ifdef _DEBUG
+            OutputDebugStringA("Error: Default texture (white1x1) not loaded! Texture binding failed.\n");
+#endif
+            return;
+        }
+
+        D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle = baseHandle;
+        albedoHandle.ptr += (8 + albedoTexture->SRVIndex) * descriptorSize;
+        commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
+
+        D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = baseHandle;
+        normalHandle.ptr += (8 + normalTexture->SRVIndex) * descriptorSize;
+        commandList->SetGraphicsRootDescriptorTable(5, normalHandle);
+
+        commandList->DrawIndexedInstanced(indexCount, 1, startIndex, 0, 0);
+    };
+
+    if (!mesh->submeshes.empty()) {
+        for (const auto& submesh : mesh->submeshes) {
+            const std::string& albedoTextureName =
+                submesh.albedoTextureName.empty() ? material->albedoTextureName : submesh.albedoTextureName;
+            const std::string& normalTextureName =
+                submesh.normalTextureName.empty() ? material->normalTextureName : submesh.normalTextureName;
+
+            bindAndDrawSubmesh(submesh.startIndex, submesh.indexCount, albedoTextureName, normalTextureName);
+        }
+    }
+    else {
+        bindAndDrawSubmesh(0u, static_cast<uint32_t>(mesh->indices.size()), material->albedoTextureName, material->normalTextureName);
+    }
+}
+
+void RenderSystem::RefreshRenderSnapshot()
+{
+    // Start each frame with an empty render snapshot. If physics has not
+    // published yet, draw code falls back to live transform pointers.
+    m_CurrentRenderSnapshot.Clear();
+    m_SnapshotWorldByEntity.clear();
+
+    if (!m_Engine) {
+        return;
+    }
+
+    SnapshotBuffer* snapshotBuffer = m_Engine->GetPhysicsSnapshotBuffer();
+    if (!snapshotBuffer) {
+        return;
+    }
+
+    const float alpha = m_Engine->GetPhysicsInterpolationAlpha();
+    // AcquirePair copies the physics history under SnapshotBuffer's lock.
+    // CameraLogicState is also copied, so draw passes use frame-local values.
+    m_CurrentRenderSnapshot = m_RenderSnapshotBuilder.Build(
+        snapshotBuffer->AcquirePair(),
+        alpha,
+        m_Engine->GetCameraLogicState());
+
+    for (const RenderDrawItemSnapshot& item : m_CurrentRenderSnapshot.GetDrawItems()) {
+        // Fast lookup used by every draw pass when binding object constants.
+        m_SnapshotWorldByEntity[item.Id] = item.World;
+    }
+}
+
+const XMFLOAT4X4* RenderSystem::FindSnapshotWorld(uint32_t entityId) const
+{
+    auto it = m_SnapshotWorldByEntity.find(entityId);
+    if (it == m_SnapshotWorldByEntity.end()) {
+        return nullptr;
+    }
+
+    return &it->second;
+}
+
+void RenderSystem::ProcessRenderCommands()
+{
+    // Drain once per frame on the render thread. Producers can keep pushing
+    // while this frame works on the copied command list.
+    for (RenderCommand& command : m_RenderCommandQueue.Drain()) {
+        switch (command.Type) {
+        case RenderCommandType::RegisterEntity: {
+            EnsureMeshResources(command.Mesh);
+
+            // RenderProxy is the render-owned representation of an entity.
+            auto existing = std::find_if(
+                m_RenderProxies.begin(),
+                m_RenderProxies.end(),
+                [&](const RenderProxy& proxy) { return proxy.Id == command.Id; });
+
+            RenderProxy proxy;
+            proxy.Id = command.Id;
+            proxy.Transform = command.Transform;
+            proxy.Mesh = command.Mesh;
+            proxy.Material = command.Material;
+            proxy.Active = command.Active;
+
+            if (existing != m_RenderProxies.end()) {
+                *existing = proxy;
+            }
+            else {
+                m_RenderProxies.push_back(proxy);
+            }
+            break;
+        }
+        case RenderCommandType::UnregisterEntity:
+            m_RenderProxies.erase(
+                std::remove_if(
+                    m_RenderProxies.begin(),
+                    m_RenderProxies.end(),
+                    [&](const RenderProxy& proxy) { return proxy.Id == command.Id; }),
+                m_RenderProxies.end());
+            break;
+        case RenderCommandType::UpdateMesh:
+        case RenderCommandType::UpdateMaterial:
+        case RenderCommandType::SetActiveCamera:
+        case RenderCommandType::Shutdown:
+            break;
+        }
+    }
+}
+
+void RenderSystem::EnsureMeshResources(MeshComponent* mesh)
+{
+    if (!mesh || !mesh->isLoaded || mesh->vertexBuffer) {
+        return;
+    }
+
+    auto device = m_RendererCore->GetDevice();
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    D3D12_RESOURCE_DESC bufferDesc = {};
+    bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufferDesc.Width = sizeof(Vertex) * mesh->vertices.size();
+    bufferDesc.Height = 1;
+    bufferDesc.DepthOrArraySize = 1;
+    bufferDesc.MipLevels = 1;
+    bufferDesc.SampleDesc.Count = 1;
+    bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+    device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mesh->vertexBuffer));
+
+    UINT8* pVertexDataBegin;
+    mesh->vertexBuffer->Map(0, nullptr, reinterpret_cast<void**>(&pVertexDataBegin));
+    memcpy(pVertexDataBegin, mesh->vertices.data(), sizeof(Vertex) * mesh->vertices.size());
+    mesh->vertexBuffer->Unmap(0, nullptr);
+
+    mesh->vertexBufferView.BufferLocation = mesh->vertexBuffer->GetGPUVirtualAddress();
+    mesh->vertexBufferView.StrideInBytes = sizeof(Vertex);
+    mesh->vertexBufferView.SizeInBytes = static_cast<UINT>(sizeof(Vertex) * mesh->vertices.size());
+
+    bufferDesc.Width = sizeof(uint32_t) * mesh->indices.size();
+    device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&mesh->indexBuffer));
+
+    UINT8* pIndexDataBegin;
+    mesh->indexBuffer->Map(0, nullptr, reinterpret_cast<void**>(&pIndexDataBegin));
+    memcpy(pIndexDataBegin, mesh->indices.data(), sizeof(uint32_t) * mesh->indices.size());
+    mesh->indexBuffer->Unmap(0, nullptr);
+
+    mesh->indexBufferView.BufferLocation = mesh->indexBuffer->GetGPUVirtualAddress();
+    mesh->indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+    mesh->indexBufferView.SizeInBytes = static_cast<UINT>(sizeof(uint32_t) * mesh->indices.size());
 }

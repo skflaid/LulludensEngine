@@ -2,6 +2,7 @@
 #include "../Common/d3dUtil.h"
 #include "Renderer/Components/CameraComponent.h"
 #include "Renderer/Components/SkyComponent.h"
+#include "Renderer/CameraState.h"
 #include "Renderer/RendererCore.h"
 #include "Core/TextureManager.h"
 #include <DirectXMath.h>
@@ -280,11 +281,24 @@ void SkyRenderer::Render(
     const TextureInfo& cubemap,
     UINT frameIndex)
 {
+    CameraRenderState renderCamera;
+    renderCamera.View = camera.ViewMatrix;
+    renderCamera.Proj = camera.ProjMatrix;
+    Render(commandList, renderCamera, sky, cubemap, frameIndex);
+}
+
+void SkyRenderer::Render(
+    ID3D12GraphicsCommandList* commandList,
+    const CameraRenderState& camera,
+    const SkyComponent& sky,
+    const TextureInfo& cubemap,
+    UINT frameIndex)
+{
     if (!commandList || !cubemap.IsValid || !cubemap.IsCubeMap) {
         return;
     }
 
-    XMFLOAT4X4 viewNoTranslation = camera.ViewMatrix;
+    XMFLOAT4X4 viewNoTranslation = camera.View;
     viewNoTranslation._41 = 0.0f;
     viewNoTranslation._42 = 0.0f;
     viewNoTranslation._43 = 0.0f;
@@ -295,7 +309,7 @@ void SkyRenderer::Render(
         XMMatrixTranspose(XMLoadFloat4x4(&viewNoTranslation)));
     XMStoreFloat4x4(
         &constants.gProj,
-        XMMatrixTranspose(XMLoadFloat4x4(&camera.ProjMatrix)));
+        XMMatrixTranspose(XMLoadFloat4x4(&camera.Proj)));
     constants.gTint = XMFLOAT4(sky.Tint.x, sky.Tint.y, sky.Tint.z, 1.0f);
     constants.gExposure = sky.Exposure;
     constants.gRotationY = sky.RotationY;

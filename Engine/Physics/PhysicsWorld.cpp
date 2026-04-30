@@ -3,6 +3,7 @@
 #include "PhysicsWorld.h"
 #include "Systems/DynamicsSystem.h"
 #include "Systems/CollisionSystem.h"
+#include <algorithm>
 
 // --- 생성자에서 중력과 고정 시간 간격을 초기화합니다 ---
 PhysicsWorld::PhysicsWorld()
@@ -75,4 +76,10 @@ void PhysicsWorld::UnregisterEntity(Entity* entity) {
 
 void PhysicsWorld::AddSystem(std::unique_ptr<ISystem> system) {
     m_Systems.push_back(std::move(system));
+}
+
+PhysicsSnapshot PhysicsWorld::CreateSnapshot(uint64_t tickIndex, double simulationTimeSeconds) const {
+    // Snapshot capture is the boundary between mutable physics components and
+    // immutable render-thread input.
+    return PhysicsSnapshot::Capture(tickIndex, simulationTimeSeconds, m_Entities);
 }

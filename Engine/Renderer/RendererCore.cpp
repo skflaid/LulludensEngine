@@ -86,8 +86,9 @@ void RendererCore::CreateCommandQueue() {
     for (uint32_t i = 0; i < FrameCount; ++i) {
         m_Device->CreateCommandAllocator(
             D3D12_COMMAND_LIST_TYPE_DIRECT,
-            IID_PPV_ARGS(&m_CommandAllocators[i])
+            IID_PPV_ARGS(&m_FrameResources[i].CommandAllocator)
         );
+        m_CommandAllocators[i] = m_FrameResources[i].CommandAllocator;
     }
 
     m_Device->CreateCommandList(
@@ -122,6 +123,7 @@ void RendererCore::CreateSwapChain(HWND hwnd) {
     );
 
     swapChain.As(&m_SwapChain);
+    m_SwapChain->SetMaximumFrameLatency(FrameCount);
     m_FrameIndex = m_SwapChain->GetCurrentBackBufferIndex();
 }
 
@@ -504,8 +506,11 @@ void RendererCore::CreateFence() {
 }
 
 void RendererCore::BeginFrame() {
-    m_CommandAllocators[m_FrameIndex]->Reset();
-    m_CommandList->Reset(m_CommandAllocators[m_FrameIndex].Get(), nullptr);
+    WaitForFrameResource(m_FrameIndex);
+
+    FrameResource& frameResource = m_FrameResources[m_FrameIndex];
+    frameResource.CommandAllocator->Reset();
+    m_CommandList->Reset(frameResource.CommandAllocator.Get(), nullptr);
 
     // Transition back buffer to render target state (for lighting pass)
     D3D12_RESOURCE_BARRIER barrier = {};
@@ -545,15 +550,27 @@ void RendererCore::Present() {
 }
 
 void RendererCore::WaitForGPU() {
-    m_CommandQueue->Signal(m_Fence.Get(), m_FenceValues[m_FrameIndex]);
-    m_Fence->SetEventOnCompletion(m_FenceValues[m_FrameIndex], m_FenceEvent);
-    WaitForSingleObject(m_FenceEvent, INFINITE);
+    if (!m_CommandQueue || !m_Fence || !m_FenceEvent) {
+        return;
+    }
+
+    const uint64_t fenceValue = m_NextFenceValue++;
+    m_CommandQueue->Signal(m_Fence.Get(), fenceValue);
+
+    if (m_Fence->GetCompletedValue() < fenceValue) {
+        m_Fence->SetEventOnCompletion(fenceValue, m_FenceEvent);
+        WaitForSingleObject(m_FenceEvent, INFINITE);
+    }
+
+    for (uint32_t i = 0; i < FrameCount; ++i) {
+        m_FrameResources[i].FenceValue = fenceValue;
+        m_FenceValues[i] = fenceValue;
+    }
 }
 
 void RendererCore::FlushCommandQueue() {
     // 현재 프레임의 fence 값을 증가시켜 명령 큐에 Signal 추가
-    const uint64_t currentFenceValue = m_FenceValues[m_FrameIndex];
-    const uint64_t newFenceValue = currentFenceValue + 1;
+    const uint64_t newFenceValue = m_NextFenceValue++;
     
     // 명령 큐에 Signal 추가 (GPU가 이전 모든 명령을 완료할 때까지 대기)
     m_CommandQueue->Signal(m_Fence.Get(), newFenceValue);
@@ -565,6 +582,7 @@ void RendererCore::FlushCommandQueue() {
     }
     
     // Fence 값 업데이트
+    m_FrameResources[m_FrameIndex].FenceValue = newFenceValue;
     m_FenceValues[m_FrameIndex] = newFenceValue;
 }
 
@@ -578,20 +596,31 @@ void RendererCore::ExecuteCommandListAndWait() {
 }
 
 void RendererCore::ResetCommandList() {
-    m_CommandAllocators[m_FrameIndex]->Reset();
-    m_CommandList->Reset(m_CommandAllocators[m_FrameIndex].Get(), nullptr);
+    WaitForFrameResource(m_FrameIndex);
+
+    FrameResource& frameResource = m_FrameResources[m_FrameIndex];
+    frameResource.CommandAllocator->Reset();
+    m_CommandList->Reset(frameResource.CommandAllocator.Get(), nullptr);
+}
+
+void RendererCore::WaitForFrameResource(uint32_t frameIndex) {
+    const uint64_t fenceValue = m_FrameResources[frameIndex].FenceValue;
+    if (fenceValue == 0 || m_Fence->GetCompletedValue() >= fenceValue) {
+        return;
+    }
+
+    m_Fence->SetEventOnCompletion(fenceValue, m_FenceEvent);
+    WaitForSingleObject(m_FenceEvent, INFINITE);
 }
 
 void RendererCore::MoveToNextFrame() {
-    const uint64_t currentFenceValue = m_FenceValues[m_FrameIndex];
-    m_CommandQueue->Signal(m_Fence.Get(), currentFenceValue);
+    const uint32_t submittedFrameIndex = m_FrameIndex;
+    const uint64_t fenceValue = m_NextFenceValue++;
+    m_CommandQueue->Signal(m_Fence.Get(), fenceValue);
+    m_FrameResources[submittedFrameIndex].FenceValue = fenceValue;
+    m_FenceValues[submittedFrameIndex] = fenceValue;
 
     m_FrameIndex = m_SwapChain->GetCurrentBackBufferIndex();
 
-    if (m_Fence->GetCompletedValue() < m_FenceValues[m_FrameIndex]) {
-        m_Fence->SetEventOnCompletion(m_FenceValues[m_FrameIndex], m_FenceEvent);
-        WaitForSingleObject(m_FenceEvent, INFINITE);
-    }
-
-    m_FenceValues[m_FrameIndex] = currentFenceValue + 1;
+    WaitForFrameResource(m_FrameIndex);
 }

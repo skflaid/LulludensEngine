@@ -2,6 +2,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <DirectXMath.h>
+#include "Renderer/FrameResource.h"
 #include <wrl/client.h>
 #include <memory>
 
@@ -36,6 +37,8 @@ public:
     ID3D12GraphicsCommandList* GetCommandList() const { return m_CommandList.Get(); }
     ID3D12CommandQueue* GetCommandQueue() const { return m_CommandQueue.Get(); }
     ID3D12CommandAllocator* GetCommandAllocator(UINT index) const { return m_CommandAllocators[index].Get(); }
+    FrameResource& GetCurrentFrameResource() { return m_FrameResources[m_FrameIndex]; }
+    const FrameResource& GetCurrentFrameResource() const { return m_FrameResources[m_FrameIndex]; }
 
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }
@@ -87,10 +90,11 @@ private:
     void CreateFence();
 
     void WaitForGPU();
+    void WaitForFrameResource(uint32_t frameIndex);
     void MoveToNextFrame();
 
 private:
-    static const uint32_t FrameCount = 2;
+    static constexpr uint32_t FrameCount = RendererFrameCount;
 
     // Core D3D12 objects
     ComPtr<ID3D12Device> m_Device;
@@ -99,6 +103,7 @@ private:
     ComPtr<IDXGISwapChain3> m_SwapChain;
     ComPtr<ID3D12CommandAllocator> m_CommandAllocators[FrameCount];
     ComPtr<ID3D12GraphicsCommandList> m_CommandList;
+    FrameResource m_FrameResources[FrameCount];
 
     // Render targets
     ComPtr<ID3D12Resource> m_RenderTargets[FrameCount];
@@ -136,6 +141,7 @@ private:
     // Synchronization objects
     ComPtr<ID3D12Fence> m_Fence;
     uint64_t m_FenceValues[FrameCount];
+    uint64_t m_NextFenceValue = 1;
     HANDLE m_FenceEvent;
 
     uint32_t m_FrameIndex;

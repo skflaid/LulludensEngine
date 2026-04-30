@@ -3,9 +3,14 @@
 #include "Core/ISystem.h"
 #include "Core/Entity.h"
 #include "Renderer/RendererCore.h"
+#include "Renderer/RenderCommandQueue.h"
+#include "Renderer/RenderSnapshot.h"
+#include "Renderer/RenderSnapshotBuilder.h"
 #include "RenderConstants.h"
 #include <vector>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -15,6 +20,9 @@ class GameEngine;
 class WinMLStyleTransferSystem;
 class EnvironmentManager;
 class SkyRenderer;
+struct MaterialComponent;
+struct MeshComponent;
+struct TransformComponent;
 
 enum class RenderMode {
     Composite,  // Lighting + SSGI
@@ -49,7 +57,7 @@ public:
     // Composite/Lighting/SSGI 디버그 표시 모드를 순환한다.
     void ToggleRenderMode();
     void ToggleStyleTransfer();
-    RenderMode GetRenderMode() const { return m_RenderMode; }
+    RenderMode GetRenderMode() const;
 
 private:
     // 지오메트리를 여러 MRT에 기록하는 G-Buffer 패스.
@@ -68,8 +76,18 @@ private:
     void RenderSkyPass(UINT frameIndex);
     // 실제 메시 엔티티 1개를 G-Buffer 패스에 그린다.
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
+    void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld);
+    struct RenderProxy;
+    void RenderProxyItem(const RenderProxy& proxy, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld);
     // 카메라/라이트/그림자/모드 상수를 프레임 CB에 채운다.
     void UpdatePassConstants(UINT frameIndex);
+    // Render-thread entry point for physics/game snapshots each frame.
+    void RefreshRenderSnapshot();
+    // Looks up interpolated physics world matrices for render proxies.
+    const XMFLOAT4X4* FindSnapshotWorld(uint32_t entityId) const;
+    // Applies queued cross-thread render commands before drawing.
+    void ProcessRenderCommands();
+    void EnsureMeshResources(MeshComponent* mesh);
 
     void RenderShadowPass(UINT frameIndex);
     void CreateShadowPipelineState();
@@ -93,6 +111,25 @@ private:
     std::unique_ptr<EnvironmentManager> m_EnvironmentManager;
     std::unique_ptr<SkyRenderer> m_SkyRenderer;
     std::vector<Entity*> m_RenderableEntities;
+    struct RenderProxy {
+        // Render-owned copy of the component pointers needed for drawing.
+        // Commands update this list; draw passes iterate it without touching
+        // the producer queue.
+        uint32_t Id = 0;
+        TransformComponent* Transform = nullptr;
+        MeshComponent* Mesh = nullptr;
+        MaterialComponent* Material = nullptr;
+        bool Active = true;
+    };
+    // Cross-thread queue: producers enqueue registration/material changes,
+    // render thread drains and converts them into RenderProxy entries.
+    RenderCommandQueue m_RenderCommandQueue;
+    std::vector<RenderProxy> m_RenderProxies;
+    // Current frame's value snapshot built from physics snapshots and camera
+    // state before the draw passes execute.
+    RenderSnapshotBuilder m_RenderSnapshotBuilder;
+    RenderSnapshot m_CurrentRenderSnapshot;
+    std::unordered_map<uint32_t, XMFLOAT4X4> m_SnapshotWorldByEntity;
     HWND m_Hwnd;
     uint32_t m_Width;
     uint32_t m_Height;
@@ -130,6 +167,7 @@ private:
     float m_DeltaTime = 0.0f;
     
     // Render mode
+    mutable std::mutex m_SettingsMutex;
     RenderMode m_RenderMode = RenderMode::Composite;
     
     // First frame flag for SSGI barrier
@@ -141,7 +179,7 @@ private:
     bool m_IsStyleTransferEnabled = true;
 
     // Constant buffers
-    static const int FrameCount = 2;
+    static constexpr int FrameCount = static_cast<int>(RendererFrameCount);
     
     // Per-object constant buffer (b0)
     ComPtr<ID3D12Resource> m_ObjectConstantBuffers[FrameCount];
