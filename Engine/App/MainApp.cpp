@@ -55,8 +55,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
     const wchar_t CLASS_NAME[] = L"GameEngineWindowClass";
-    const uint32_t WINDOW_WIDTH = 1280;
-    const uint32_t WINDOW_HEIGHT = 720;
+    const uint32_t WINDOW_WIDTH = 1920;
+    const uint32_t WINDOW_HEIGHT = 1080;
 
     WNDCLASSEX wc = {};
     wc.cbSize = sizeof(WNDCLASSEX);

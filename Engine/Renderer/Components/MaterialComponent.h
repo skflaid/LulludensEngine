@@ -8,7 +8,7 @@ using namespace DirectX;
 struct MaterialComponent : public IComponent {
     COMPONENT_TYPE(MaterialComponent)
 
-        XMFLOAT4 albedo = { 1.0f, 1.0f, 1.0f, 1.0f };
+    XMFLOAT4 albedo = { 1.0f, 1.0f, 1.0f, 1.0f };
     float metallic = 0.0f;
     float roughness = 0.5f;
 

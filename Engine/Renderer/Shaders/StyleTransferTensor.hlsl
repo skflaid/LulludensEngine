@@ -34,6 +34,50 @@ uint SampleSourceCoord(uint dstCoord, uint dstExtent, uint srcExtent)
     return ClampCoord(srcCoord, srcExtent);
 }
 
+uint ClampCoordSigned(int value, uint maxExclusive)
+{
+    if (maxExclusive == 0u) {
+        return 0u;
+    }
+
+    return (uint)clamp(value, 0, int(maxExclusive - 1u));
+}
+
+float SampleSourceTexelCoord(uint dstCoord, uint dstExtent, uint srcExtent)
+{
+    if (dstExtent == 0u || srcExtent == 0u) {
+        return 0.0f;
+    }
+
+    return ((float(dstCoord) + 0.5f) * float(srcExtent) / float(dstExtent)) - 0.5f;
+}
+
+float4 LoadLightingBilinear(uint dstX, uint dstY)
+{
+    float srcX = SampleSourceTexelCoord(dstX, gTargetWidth, gSourceWidth);
+    float srcY = SampleSourceTexelCoord(dstY, gTargetHeight, gSourceHeight);
+
+    int x0 = (int)floor(srcX);
+    int y0 = (int)floor(srcY);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    float tx = srcX - floor(srcX);
+    float ty = srcY - floor(srcY);
+
+    uint ix0 = ClampCoordSigned(x0, gSourceWidth);
+    uint iy0 = ClampCoordSigned(y0, gSourceHeight);
+    uint ix1 = ClampCoordSigned(x1, gSourceWidth);
+    uint iy1 = ClampCoordSigned(y1, gSourceHeight);
+
+    float4 c00 = gLighting.Load(int3(ix0, iy0, 0));
+    float4 c10 = gLighting.Load(int3(ix1, iy0, 0));
+    float4 c01 = gLighting.Load(int3(ix0, iy1, 0));
+    float4 c11 = gLighting.Load(int3(ix1, iy1, 0));
+
+    return lerp(lerp(c00, c10, tx), lerp(c01, c11, tx), ty);
+}
+
 [numthreads(1, 1, 1)]
 void ResetDepthMinMaxCS(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -59,7 +103,7 @@ void TensorizeCS(uint3 dispatchThreadId : SV_DispatchThreadID)
     uint idx = y * gTargetWidth + x;
     uint planeSize = gTargetWidth * gTargetHeight;
 
-    float4 lighting = gLighting.Load(int3(srcX, srcY, 0));
+    float4 lighting = LoadLightingBilinear(x, y);
     gImageTensor[idx] = saturate(lighting.x);
     gImageTensor[idx + planeSize] = saturate(lighting.y);
     gImageTensor[idx + planeSize * 2u] = saturate(lighting.z);
