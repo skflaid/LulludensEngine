@@ -216,8 +216,8 @@ void WinMLStyleTransferSystem::CreateOutputTexture()
 
     D3D12_RESOURCE_DESC textureDesc = {};
     textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    textureDesc.Width = m_RenderWidth;
-    textureDesc.Height = m_RenderHeight;
+    textureDesc.Width = m_Config.inputWidth;
+    textureDesc.Height = m_Config.inputHeight;
     textureDesc.DepthOrArraySize = 1;
     textureDesc.MipLevels = 1;
     textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -683,8 +683,8 @@ void WinMLStyleTransferSystem::DispatchOutputDetensorization()
     const std::array<uint32_t, 4> constants = {
         m_Config.inputWidth,
         m_Config.inputHeight,
-        m_RenderWidth,
-        m_RenderHeight
+        m_Config.inputWidth,
+        m_Config.inputHeight
     };
 
     ID3D12DescriptorHeap* heaps[] = { m_DetensorizeHeap.Get() };
@@ -701,7 +701,7 @@ void WinMLStyleTransferSystem::DispatchOutputDetensorization()
     commandList->SetComputeRootDescriptorTable(2, uavHandle);
 
     commandList->SetPipelineState(m_DetensorizePSO.Get());
-    commandList->Dispatch((m_RenderWidth + (kThreadsX - 1)) / kThreadsX, (m_RenderHeight + (kThreadsY - 1)) / kThreadsY, 1);
+    commandList->Dispatch((m_Config.inputWidth + (kThreadsX - 1)) / kThreadsX, (m_Config.inputHeight + (kThreadsY - 1)) / kThreadsY, 1);
 }
 
 bool WinMLStyleTransferSystem::UploadOutput()

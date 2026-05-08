@@ -7,6 +7,7 @@
 #include "../Common/d3dUtil.h"
 #include "Renderer/Components/CameraComponent.h"
 #include "Renderer/Components/SkyComponent.h"
+#include "DirectSRUpscaler.h"
 #include <d3dcompiler.h>
 #include "Renderer/Components/SkeletonComponent.h"
 #include "Core/TextureManager.h"
@@ -14,8 +15,36 @@
 #include "SkyRenderer.h"
 #include "Threading/SnapshotBuffer.h"
 #include <algorithm>
+#include <stdexcept>
 
 #pragma comment(lib, "d3dcompiler.lib")
+
+namespace {
+void DebugLogDirectSR(const char* message)
+{
+#if defined(_DEBUG)
+    OutputDebugStringA(message);
+    OutputDebugStringA("\n");
+#else
+    (void)message;
+#endif
+}
+
+void DebugLogDirectSR(const std::string& message)
+{
+    DebugLogDirectSR(message.c_str());
+}
+
+std::string DirectSRTextureDesc(ID3D12Resource* texture)
+{
+    if (!texture) {
+        return "null";
+    }
+
+    const D3D12_RESOURCE_DESC desc = texture->GetDesc();
+    return std::to_string(static_cast<UINT>(desc.Width)) + "x" + std::to_string(desc.Height);
+}
+}
 
 RenderSystem::RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32_t height)
     : m_Engine(engine), m_Hwnd(hwnd), m_Width(width), m_Height(height),
@@ -34,7 +63,7 @@ RenderSystem::~RenderSystem() {
 void RenderSystem::Initialize() {
     m_RendererCore = std::make_unique<RendererCore>();
     if (!m_RendererCore->Initialize(m_Hwnd, m_Width, m_Height)) {
-        return;
+        throw std::runtime_error("RendererCore initialization failed.");
     }
 
     /*
@@ -66,8 +95,26 @@ void RenderSystem::Initialize() {
     styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\net4.onnx";
     styleConfig.inputWidth = 640;
     styleConfig.inputHeight = 360;
+    m_StyleOutputWidth = styleConfig.inputWidth != 0 ? styleConfig.inputWidth : m_Width;
+    m_StyleOutputHeight = styleConfig.inputHeight != 0 ? styleConfig.inputHeight : m_Height;
     m_WinMLStyleTransferSystem = std::make_unique<WinMLStyleTransferSystem>(m_RendererCore.get(), styleConfig);
     m_WinMLStyleTransferSystem->Initialize();
+
+    CreateDirectSRResources();
+    DirectSRUpscaler::InitializeDesc directSRDesc = {};
+    directSRDesc.Device = m_RendererCore->GetDevice();
+    directSRDesc.CommandQueue = m_RendererCore->GetCommandQueue();
+    directSRDesc.TargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    directSRDesc.SourceColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    directSRDesc.SourceDepthFormat = DXGI_FORMAT_R32_FLOAT;
+    directSRDesc.CreateFlags = DSR_SUPERRES_CREATE_ENGINE_FLAG_ENABLE_SHARPENING;
+    m_DirectSRUpscaler = std::make_unique<DirectSRUpscaler>();
+    if (!m_DirectSRUpscaler->Initialize(directSRDesc)) {
+#if defined(_DEBUG)
+        OutputDebugStringA(("DirectSR disabled: " + m_DirectSRUpscaler->GetLastError() + "\n").c_str());
+#endif
+        m_DirectSRUpscaler.reset();
+    }
     
     CreateGBufferPipelineState();
     CreateShadowPipelineState();
@@ -975,6 +1022,15 @@ void RenderSystem::Shutdown() {
         m_WinMLStyleTransferSystem.reset();
     }
 
+    if (m_DirectSRUpscaler) {
+        m_DirectSRUpscaler->Shutdown();
+        m_DirectSRUpscaler.reset();
+    }
+
+    m_DirectSRMotionVectors.Reset();
+    m_DirectSRMotionVectorRTVHeap.Reset();
+    m_DirectSRMotionVectorRTV = {};
+
     if (m_RendererCore) {
         m_RendererCore->Shutdown();
     }
@@ -1100,7 +1156,28 @@ void RenderSystem::Render() {
     if (styleTransferEnabled &&
         m_WinMLStyleTransferSystem &&
         m_WinMLStyleTransferSystem->Execute()) {
-        CopyFrameToBackBuffer(m_WinMLStyleTransferSystem->GetOutputTexture());
+        ID3D12Resource* styleOutput = m_WinMLStyleTransferSystem->GetOutputTexture();
+        if (!TryUpscaleStyleTransferOutput(styleOutput)) {
+            if (styleOutput) {
+                const D3D12_RESOURCE_DESC styleOutputDesc = styleOutput->GetDesc();
+                if (styleOutputDesc.Width == m_Width && styleOutputDesc.Height == m_Height) {
+                    CopyFrameToBackBuffer(styleOutput);
+                }
+                else {
+                    DebugLogDirectSR(
+                        "DirectSR upscale unavailable; copying lighting buffer because style output is not back-buffer sized: source="
+                        + DirectSRTextureDesc(styleOutput)
+                        + ", target="
+                        + std::to_string(m_Width)
+                        + "x"
+                        + std::to_string(m_Height));
+                    CopyFrameToBackBuffer(m_RendererCore->GetLightingBuffer());
+                }
+            }
+            else {
+                CopyFrameToBackBuffer(m_RendererCore->GetLightingBuffer());
+            }
+        }
     }
     else {
         CopyFrameToBackBuffer(m_RendererCore->GetLightingBuffer());
@@ -1388,6 +1465,228 @@ void RenderSystem::CopyFrameToBackBuffer(ID3D12Resource* sourceTexture) {
     toRenderTarget.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
     toRenderTarget.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &toRenderTarget);
+}
+
+bool RenderSystem::TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputTexture) {
+    if (!m_DirectSRUpscaler) {
+        DebugLogDirectSR("DirectSR upscale skipped: upscaler is not initialized.");
+        return false;
+    }
+
+    if (!styleOutputTexture) {
+        DebugLogDirectSR("DirectSR upscale skipped: style transfer output texture is null.");
+        return false;
+    }
+
+    if (!m_DirectSRMotionVectors) {
+        DebugLogDirectSR("DirectSR upscale skipped: motion vector texture is not available.");
+        return false;
+    }
+
+    ID3D12Resource* depthTexture = m_RendererCore->GetGBufferDepth();
+    if (!depthTexture) {
+        DebugLogDirectSR("DirectSR upscale skipped: depth texture is not available.");
+        return false;
+    }
+
+    DebugLogDirectSR(
+        "DirectSR upscale requested: source="
+        + DirectSRTextureDesc(styleOutputTexture)
+        + ", target="
+        + std::to_string(m_Width)
+        + "x"
+        + std::to_string(m_Height));
+
+    auto* commandList = m_RendererCore->GetCommandList();
+    ClearDirectSRMotionVectors();
+
+    D3D12_RESOURCE_BARRIER toDirectSRInputs[2] = {};
+    toDirectSRInputs[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toDirectSRInputs[0].Transition.pResource = styleOutputTexture;
+    toDirectSRInputs[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    toDirectSRInputs[0].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    toDirectSRInputs[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    toDirectSRInputs[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toDirectSRInputs[1].Transition.pResource = depthTexture;
+    toDirectSRInputs[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    toDirectSRInputs[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    toDirectSRInputs[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(_countof(toDirectSRInputs), toDirectSRInputs);
+
+    m_RendererCore->ExecuteCommandListAndWait();
+    m_RendererCore->ResetCommandList();
+
+    DirectSRUpscaler::UpscaleDesc upscaleDesc = {};
+    upscaleDesc.SourceColorTexture = styleOutputTexture;
+    upscaleDesc.SourceDepthTexture = depthTexture;
+    upscaleDesc.MotionVectorsTexture = m_DirectSRMotionVectors.Get();
+    upscaleDesc.SourceColorRegion = { 0, 0, static_cast<LONG>(m_StyleOutputWidth), static_cast<LONG>(m_StyleOutputHeight) };
+    upscaleDesc.SourceDepthRegion = { 0, 0, static_cast<LONG>(m_StyleOutputWidth), static_cast<LONG>(m_StyleOutputHeight) };
+    upscaleDesc.MotionVectorsRegion = { 0, 0, static_cast<LONG>(m_StyleOutputWidth), static_cast<LONG>(m_StyleOutputHeight) };
+    upscaleDesc.TargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    upscaleDesc.SourceColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    upscaleDesc.SourceDepthFormat = DXGI_FORMAT_R32_FLOAT;
+    upscaleDesc.TimeDeltaInSeconds = m_DeltaTime;
+    upscaleDesc.ResetHistory = m_DirectSRResetHistory;
+    upscaleDesc.Sharpness = 0.5f;
+
+    if (m_Engine && m_Engine->GetMainCamera()) {
+        CameraComponent* camera = m_Engine->GetMainCamera()->GetComponent<CameraComponent>();
+        if (camera) {
+            upscaleDesc.CameraFovAngleVert = camera->Fov;
+        }
+    }
+
+    HRESULT hr = m_DirectSRUpscaler->Upscale(m_Width, m_Height, upscaleDesc);
+    commandList = m_RendererCore->GetCommandList();
+
+    if (FAILED(hr)) {
+#if defined(_DEBUG)
+        OutputDebugStringA(("DirectSR upscale failed: " + m_DirectSRUpscaler->GetLastError() + "\n").c_str());
+#endif
+        D3D12_RESOURCE_BARRIER restoreInputs[2] = {};
+        restoreInputs[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        restoreInputs[0].Transition.pResource = styleOutputTexture;
+        restoreInputs[0].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        restoreInputs[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        restoreInputs[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        restoreInputs[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        restoreInputs[1].Transition.pResource = depthTexture;
+        restoreInputs[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        restoreInputs[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        restoreInputs[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList->ResourceBarrier(_countof(restoreInputs), restoreInputs);
+        m_DirectSRResetHistory = true;
+        return false;
+    }
+
+    ID3D12Resource* upscaledTexture = m_DirectSRUpscaler->GetOutputTexture();
+    if (!upscaledTexture) {
+        DebugLogDirectSR("DirectSR upscale failed: output texture was not created.");
+        D3D12_RESOURCE_BARRIER restoreInputs[2] = {};
+        restoreInputs[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        restoreInputs[0].Transition.pResource = styleOutputTexture;
+        restoreInputs[0].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        restoreInputs[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        restoreInputs[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        restoreInputs[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        restoreInputs[1].Transition.pResource = depthTexture;
+        restoreInputs[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        restoreInputs[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        restoreInputs[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList->ResourceBarrier(_countof(restoreInputs), restoreInputs);
+        m_DirectSRResetHistory = true;
+        return false;
+    }
+
+    D3D12_RESOURCE_BARRIER afterUpscale[3] = {};
+    afterUpscale[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    afterUpscale[0].Transition.pResource = upscaledTexture;
+    afterUpscale[0].Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    afterUpscale[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    afterUpscale[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    afterUpscale[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    afterUpscale[1].Transition.pResource = styleOutputTexture;
+    afterUpscale[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    afterUpscale[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    afterUpscale[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    afterUpscale[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    afterUpscale[2].Transition.pResource = depthTexture;
+    afterUpscale[2].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    afterUpscale[2].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    afterUpscale[2].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(_countof(afterUpscale), afterUpscale);
+
+    CopyFrameToBackBuffer(upscaledTexture);
+    DebugLogDirectSR("DirectSR upscale output copied to back buffer: output=" + DirectSRTextureDesc(upscaledTexture));
+
+    D3D12_RESOURCE_BARRIER restoreOutput = {};
+    restoreOutput.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    restoreOutput.Transition.pResource = upscaledTexture;
+    restoreOutput.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    restoreOutput.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    restoreOutput.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &restoreOutput);
+
+    m_DirectSRResetHistory = false;
+    return true;
+}
+
+void RenderSystem::CreateDirectSRResources() {
+    auto* device = m_RendererCore->GetDevice();
+
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+    rtvHeapDesc.NumDescriptors = 1;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    if (FAILED(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_DirectSRMotionVectorRTVHeap)))) {
+        DebugLogDirectSR("DirectSR resource creation failed: motion vector RTV heap could not be created.");
+        return;
+    }
+    m_DirectSRMotionVectorRTV = m_DirectSRMotionVectorRTVHeap->GetCPUDescriptorHandleForHeapStart();
+
+    D3D12_RESOURCE_DESC textureDesc = {};
+    textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    textureDesc.Width = m_StyleOutputWidth != 0 ? m_StyleOutputWidth : m_Width;
+    textureDesc.Height = m_StyleOutputHeight != 0 ? m_StyleOutputHeight : m_Height;
+    textureDesc.DepthOrArraySize = 1;
+    textureDesc.MipLevels = 1;
+    textureDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+    textureDesc.SampleDesc.Count = 1;
+    textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE clearValue = {};
+    clearValue.Format = DXGI_FORMAT_R16G16_FLOAT;
+    clearValue.Color[0] = 0.0f;
+    clearValue.Color[1] = 0.0f;
+    clearValue.Color[2] = 0.0f;
+    clearValue.Color[3] = 0.0f;
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    HRESULT hr = device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &textureDesc,
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+        &clearValue,
+        IID_PPV_ARGS(&m_DirectSRMotionVectors));
+    if (FAILED(hr)) {
+        DebugLogDirectSR("DirectSR resource creation failed: motion vector texture could not be created.");
+        m_DirectSRMotionVectorRTVHeap.Reset();
+        m_DirectSRMotionVectorRTV = {};
+        return;
+    }
+
+    device->CreateRenderTargetView(m_DirectSRMotionVectors.Get(), nullptr, m_DirectSRMotionVectorRTV);
+}
+
+void RenderSystem::ClearDirectSRMotionVectors() {
+    if (!m_DirectSRMotionVectors || m_DirectSRMotionVectorRTV.ptr == 0) {
+        return;
+    }
+
+    auto* commandList = m_RendererCore->GetCommandList();
+
+    D3D12_RESOURCE_BARRIER toRenderTarget = {};
+    toRenderTarget.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toRenderTarget.Transition.pResource = m_DirectSRMotionVectors.Get();
+    toRenderTarget.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    toRenderTarget.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toRenderTarget.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toRenderTarget);
+
+    const float zero[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    commandList->ClearRenderTargetView(m_DirectSRMotionVectorRTV, zero, 0, nullptr);
+
+    D3D12_RESOURCE_BARRIER toDirectSRInput = {};
+    toDirectSRInput.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toDirectSRInput.Transition.pResource = m_DirectSRMotionVectors.Get();
+    toDirectSRInput.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toDirectSRInput.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    toDirectSRInput.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toDirectSRInput);
 }
 
 void RenderSystem::RenderSkyPass(UINT frameIndex)

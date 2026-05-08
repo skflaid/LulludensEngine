@@ -17,6 +17,7 @@ using namespace DirectX;
 static constexpr UINT MAX_BONES = 128;
 
 class GameEngine;
+class DirectSRUpscaler;
 class WinMLStyleTransferSystem;
 class EnvironmentManager;
 class SkyRenderer;
@@ -73,6 +74,9 @@ private:
     void CopySSGIToPrevious(UINT frameIndex);
     // Lighting 또는 StyleTransfer 결과를 백버퍼로 복사한다.
     void CopyFrameToBackBuffer(ID3D12Resource* sourceTexture);
+    bool TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputTexture);
+    void CreateDirectSRResources();
+    void ClearDirectSRMotionVectors();
     void RenderSkyPass(UINT frameIndex);
     // 실제 메시 엔티티 1개를 G-Buffer 패스에 그린다.
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
@@ -108,6 +112,7 @@ private:
     std::unique_ptr<RendererCore> m_RendererCore;
     // Lighting 이후 화면 스타일 추론을 담당하는 후처리 시스템.
     std::unique_ptr<WinMLStyleTransferSystem> m_WinMLStyleTransferSystem;
+    std::unique_ptr<DirectSRUpscaler> m_DirectSRUpscaler;
     std::unique_ptr<EnvironmentManager> m_EnvironmentManager;
     std::unique_ptr<SkyRenderer> m_SkyRenderer;
     std::vector<Entity*> m_RenderableEntities;
@@ -157,6 +162,12 @@ private:
     D3D12_VIEWPORT m_ShadowViewport = {};
     D3D12_RECT m_ShadowScissorRect = {};
 
+    ComPtr<ID3D12Resource> m_DirectSRMotionVectors;
+    ComPtr<ID3D12DescriptorHeap> m_DirectSRMotionVectorRTVHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_DirectSRMotionVectorRTV = {};
+    uint32_t m_StyleOutputWidth = 0;
+    uint32_t m_StyleOutputHeight = 0;
+
     // Camera matrices
     XMFLOAT4X4 m_ViewMatrix;
     XMFLOAT4X4 m_ProjMatrix;
@@ -177,6 +188,7 @@ private:
     // LightingBuffer가 첫 프레임 이후 COPY_SOURCE -> RENDER_TARGET 전환이 필요한지 추적한다.
     bool m_IsFirstLightingFrame = true;
     bool m_IsStyleTransferEnabled = true;
+    bool m_DirectSRResetHistory = true;
 
     // Constant buffers
     static constexpr int FrameCount = static_cast<int>(RendererFrameCount);

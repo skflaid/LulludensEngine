@@ -256,6 +256,9 @@
     <ClInclude Include="Renderer\Systems\SkyRenderer.h">
       <Filter>Header Files\Renderer\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="Renderer\Systems\DirectSRUpscaler.h">
+      <Filter>Header Files\Renderer\Systems</Filter>
+    </ClInclude>
     <ClInclude Include="Threading\FixedTimeStep.h">
       <Filter>Header Files\Threading</Filter>
     </ClInclude>
@@ -302,6 +305,9 @@
     </ClCompile>
     <ClCompile Include="App\MainApp.cpp">
       <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectXAgilityExports.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Core\FBXLoader.cpp">
       <Filter>Source Files\Core</Filter>
@@ -373,6 +379,9 @@
     <ClCompile Include="Renderer\Systems\SkyRenderer.cpp">
       <Filter>Source Files\Renderer\Systems</Filter>
     </ClCompile>
+    <ClCompile Include="Renderer\Systems\DirectSRUpscaler.cpp">
+      <Filter>Source Files\Renderer\Systems</Filter>
+    </ClCompile>
     <ClCompile Include="Renderer\TransformInterpolator.cpp">
       <Filter>Source Files\Renderer\Threading</Filter>
     </ClCompile>
@@ -421,5 +430,6 @@
     <None Include="Renderer\Shaders\Skybox.hlsl">
       <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
+    <None Include="Renderer\Shaders\StyleTransferTensor.hlsl" />
   </ItemGroup>
 </Project>

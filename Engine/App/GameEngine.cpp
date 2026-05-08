@@ -24,6 +24,7 @@
 
 #include "Renderer/Components/TransformAnimationComponent.h"
 #include <chrono>
+#include <exception>
 #include <thread>
 // Model.h는 FBXLoader.h에서 이미 포함되므로 여기서는 제거
 
@@ -32,6 +33,7 @@ GameEngine::~GameEngine() = default;
 
 bool GameEngine::Initialize(HWND hwnd, uint32_t width, uint32_t height)
 {
+    try {
     m_PhysicsWorld = std::make_shared<PhysicsWorld>();
     m_PhysicsWorld->Initialize();
     // Shared handoff point from physics simulation to rendering.
@@ -64,6 +66,12 @@ bool GameEngine::Initialize(HWND hwnd, uint32_t width, uint32_t height)
     // After all systems and initial entities exist, start the worker loops.
     StartRuntimeThreads();
     return true;
+    }
+    catch (const std::exception& e) {
+        MessageBoxA(hwnd, e.what(), "Lulludens Engine initialization failed", MB_OK | MB_ICONERROR);
+        Shutdown();
+        return false;
+    }
 }
 
 void GameEngine::Update(float deltaTime)

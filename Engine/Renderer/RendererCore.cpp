@@ -1,8 +1,27 @@
 #include "RendererCore.h"
+#include <cstdio>
 #include <stdexcept>
+#include <string>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
+
+namespace {
+std::string FormatHResult(HRESULT hr) {
+    char buffer[16] = {};
+    std::snprintf(buffer, sizeof(buffer), "0x%08X", static_cast<unsigned int>(hr));
+    return buffer;
+}
+
+void ThrowIfFailedHr(HRESULT hr, const char* call) {
+    if (SUCCEEDED(hr)) {
+        return;
+    }
+
+    std::string message = std::string(call) + " failed with HRESULT " + FormatHResult(hr) + ".";
+    throw std::runtime_error(message);
+}
+}
 
 RendererCore::RendererCore()
     : m_FrameIndex(0)
@@ -28,23 +47,17 @@ bool RendererCore::Initialize(HWND hwnd, uint32_t width, uint32_t height) {
     m_Width = width;
     m_Height = height;
 
-    try {
-        CreateDevice();
-        CreateCommandQueue();
-        CreateSwapChain(hwnd);
-        CreateRenderTargetViews();
-        CreateDepthStencilBuffer();
-        CreateGBuffer();
-        CreateLightingBuffer();
-        CreateSSGIBuffer();
-        CreateFence();
+    CreateDevice();
+    CreateCommandQueue();
+    CreateSwapChain(hwnd);
+    CreateRenderTargetViews();
+    CreateDepthStencilBuffer();
+    CreateGBuffer();
+    CreateLightingBuffer();
+    CreateSSGIBuffer();
+    CreateFence();
 
-        return true;
-    }
-    catch (const std::exception& e) {
-        // Log error
-        return false;
-    }
+    return true;
 }
 
 void RendererCore::Shutdown() {
@@ -67,13 +80,19 @@ void RendererCore::CreateDevice() {
     }
 #endif
 
-    CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&m_Factory));
+    ThrowIfFailedHr(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&m_Factory)), "CreateDXGIFactory2");
 
-    D3D12CreateDevice(
+    HRESULT hr = D3D12CreateDevice(
         nullptr,
         D3D_FEATURE_LEVEL_11_0,
         IID_PPV_ARGS(&m_Device)
     );
+    if (FAILED(hr)) {
+        std::string message = "D3D12CreateDevice failed with HRESULT " + FormatHResult(hr) + ".";
+        message += " DirectSR is provided by a preview D3D12 Agility SDK in this project; preview D3D12Core releases require Windows Developer Mode.";
+        message += " Enable Settings > System > For developers > Developer Mode, then run again.";
+        throw std::runtime_error(message);
+    }
 }
 
 void RendererCore::CreateCommandQueue() {
@@ -81,25 +100,25 @@ void RendererCore::CreateCommandQueue() {
     queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 
-    m_Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue));
+    ThrowIfFailedHr(m_Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue)), "ID3D12Device::CreateCommandQueue");
 
     for (uint32_t i = 0; i < FrameCount; ++i) {
-        m_Device->CreateCommandAllocator(
+        ThrowIfFailedHr(m_Device->CreateCommandAllocator(
             D3D12_COMMAND_LIST_TYPE_DIRECT,
             IID_PPV_ARGS(&m_FrameResources[i].CommandAllocator)
-        );
+        ), "ID3D12Device::CreateCommandAllocator");
         m_CommandAllocators[i] = m_FrameResources[i].CommandAllocator;
     }
 
-    m_Device->CreateCommandList(
+    ThrowIfFailedHr(m_Device->CreateCommandList(
         0,
         D3D12_COMMAND_LIST_TYPE_DIRECT,
         m_CommandAllocators[0].Get(),
         nullptr,
         IID_PPV_ARGS(&m_CommandList)
-    );
+    ), "ID3D12Device::CreateCommandList");
 
-    m_CommandList->Close();
+    ThrowIfFailedHr(m_CommandList->Close(), "ID3D12GraphicsCommandList::Close");
 }
 
 void RendererCore::CreateSwapChain(HWND hwnd) {
@@ -113,17 +132,16 @@ void RendererCore::CreateSwapChain(HWND hwnd) {
     swapChainDesc.SampleDesc.Count = 1;
 
     ComPtr<IDXGISwapChain1> swapChain;
-    m_Factory->CreateSwapChainForHwnd(
+    ThrowIfFailedHr(m_Factory->CreateSwapChainForHwnd(
         m_CommandQueue.Get(),
         hwnd,
         &swapChainDesc,
         nullptr,
         nullptr,
         &swapChain
-    );
+    ), "IDXGIFactory::CreateSwapChainForHwnd");
 
-    swapChain.As(&m_SwapChain);
-    m_SwapChain->SetMaximumFrameLatency(FrameCount);
+    ThrowIfFailedHr(swapChain.As(&m_SwapChain), "IDXGISwapChain::QueryInterface");
     m_FrameIndex = m_SwapChain->GetCurrentBackBufferIndex();
 }
 
@@ -133,13 +151,13 @@ void RendererCore::CreateRenderTargetViews() {
     rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 
-    m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_RTVHeap));
+    ThrowIfFailedHr(m_Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&m_RTVHeap)), "ID3D12Device::CreateDescriptorHeap");
     m_RTVDescriptorSize = m_Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_RTVHeap->GetCPUDescriptorHandleForHeapStart();
 
     for (uint32_t i = 0; i < FrameCount; ++i) {
-        m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&m_RenderTargets[i]));
+        ThrowIfFailedHr(m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&m_RenderTargets[i])), "IDXGISwapChain::GetBuffer");
         m_Device->CreateRenderTargetView(m_RenderTargets[i].Get(), nullptr, rtvHandle);
         rtvHandle.ptr += m_RTVDescriptorSize;
     }
@@ -150,7 +168,7 @@ void RendererCore::CreateDepthStencilBuffer() {
     dsvHeapDesc.NumDescriptors = 1;
     dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
     dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-    m_Device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&m_DSVHeap));
+    ThrowIfFailedHr(m_Device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&m_DSVHeap)), "ID3D12Device::CreateDescriptorHeap");
 
     D3D12_RESOURCE_DESC depthStencilDesc = {};
     depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -170,14 +188,14 @@ void RendererCore::CreateDepthStencilBuffer() {
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
 
-    m_Device->CreateCommittedResource(
+    ThrowIfFailedHr(m_Device->CreateCommittedResource(
         &heapProps,
         D3D12_HEAP_FLAG_NONE,
         &depthStencilDesc,
         D3D12_RESOURCE_STATE_DEPTH_WRITE,
         &clearValue,
         IID_PPV_ARGS(&m_DepthStencil)
-    );
+    ), "ID3D12Device::CreateCommittedResource");
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;

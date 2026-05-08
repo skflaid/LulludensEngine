@@ -54,6 +54,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
+    <Import Project="C:\LocalRepository\CPP_Lib\microsoft.direct3d.d3d12.1.716.1-preview\build\native\Microsoft.Direct3D.D3D12.props" Condition="exists('C:\LocalRepository\CPP_Lib\microsoft.direct3d.d3d12.1.716.1-preview\build\native\Microsoft.Direct3D.D3D12.props')" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -69,7 +70,11 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <DirectXPlatform Condition="'$(Platform)'=='Win32'">win32</DirectXPlatform>
+    <DirectXPlatform Condition="'$(Platform)'=='x64'">x64</DirectXPlatform>
+    <Microsoft_Direct3D_D3D12_D3D12SDKPath>.\D3D12\</Microsoft_Direct3D_D3D12_D3D12SDKPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -183,6 +188,7 @@
     <ClInclude Include="Renderer\RenderThreadContext.h" />
     <ClInclude Include="Renderer\Systems\AnimationSystem.h" />
     <ClInclude Include="Renderer\Systems\CameraSystem.h" />
+    <ClInclude Include="Renderer\Systems\DirectSRUpscaler.h" />
     <ClInclude Include="Renderer\Systems\EnvironmentManager.h" />
     <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
@@ -205,6 +211,7 @@
     <ClCompile Include="App\EntityInspector.cpp" />
     <ClCompile Include="App\GameEngine.cpp" />
     <ClCompile Include="App\MainApp.cpp" />
+    <ClCompile Include="DirectXAgilityExports.cpp" />
     <ClCompile Include="Core\FBXLoader.cpp" />
     <ClCompile Include="Core\ModelInstantiation.cpp" />
     <ClCompile Include="Core\TextureManager.cpp" />
@@ -226,6 +233,7 @@
     <ClCompile Include="Renderer\RenderThreadContext.cpp" />
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp" />
     <ClCompile Include="Renderer\Systems\CameraSystem.cpp" />
+    <ClCompile Include="Renderer\Systems\DirectSRUpscaler.cpp" />
     <ClCompile Include="Renderer\Systems\EnvironmentManager.cpp" />
     <ClCompile Include="Renderer\Systems\RenderSystem.cpp" />
     <ClCompile Include="Renderer\Systems\SkyRenderer.cpp" />
@@ -286,5 +294,6 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="C:\LocalRepository\CPP_Lib\microsoft.direct3d.d3d12.1.716.1-preview\build\native\Microsoft.Direct3D.D3D12.targets" Condition="exists('C:\LocalRepository\CPP_Lib\microsoft.direct3d.d3d12.1.716.1-preview\build\native\Microsoft.Direct3D.D3D12.targets')" />
   </ImportGroup>
 </Project>
