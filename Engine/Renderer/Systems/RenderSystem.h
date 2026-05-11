@@ -28,7 +28,8 @@ struct TransformComponent;
 enum class RenderMode {
     Composite,  // Lighting + SSGI
     Lighting,   // Lighting only
-    SSGI        // SSGI only
+    SSGI,       // SSGI only
+    MotionVector
 };
 
 class RenderSystem : public ISystem {
@@ -77,6 +78,7 @@ private:
     bool TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputTexture);
     void CreateDirectSRResources();
     void RenderVelocityPass(UINT frameIndex);
+    void RenderMotionVectorVisualizationPass();
     void RenderSkyPass(UINT frameIndex);
     // 실제 메시 엔티티 1개를 G-Buffer 패스에 그린다.
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
@@ -101,6 +103,7 @@ private:
 
     void CreateGBufferPipelineState();
     void CreateVelocityPipelineState();
+    void CreateMotionVectorDebugPipelineState();
     void CreateLightingPipelineState();
     void CreateBackgroundResolvePipelineState();
     void CreateSSGIPipelineState();
@@ -148,6 +151,8 @@ private:
     ComPtr<ID3D12PipelineState> m_GBufferPipelineState;
     ComPtr<ID3D12RootSignature> m_VelocityRootSignature;
     ComPtr<ID3D12PipelineState> m_VelocityPipelineState;
+    ComPtr<ID3D12RootSignature> m_MotionVectorDebugRootSignature;
+    ComPtr<ID3D12PipelineState> m_MotionVectorDebugPipelineState;
 
     ComPtr<ID3D12PipelineState> m_ShadowPipelineState;
 
@@ -170,6 +175,7 @@ private:
 
     ComPtr<ID3D12Resource> m_DirectSRMotionVectors;
     ComPtr<ID3D12DescriptorHeap> m_DirectSRMotionVectorRTVHeap;
+    ComPtr<ID3D12DescriptorHeap> m_DirectSRMotionVectorSRVHeap;
     D3D12_CPU_DESCRIPTOR_HANDLE m_DirectSRMotionVectorRTV = {};
     uint32_t m_StyleOutputWidth = 0;
     uint32_t m_StyleOutputHeight = 0;

@@ -102,6 +102,19 @@ void GameEngine::Render()
     }
 
     if (m_RenderSystem) {
+        static auto nextDebugRenderTime = std::chrono::steady_clock::now();
+        if (m_RenderSystem->GetRenderMode() == RenderMode::MotionVector) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now < nextDebugRenderTime) {
+                std::this_thread::sleep_for(nextDebugRenderTime - now);
+            }
+            nextDebugRenderTime = std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<float>(1.0f / 60.0f));
+        }
+        else {
+            nextDebugRenderTime = std::chrono::steady_clock::now();
+        }
+
         m_RenderSystem->Render();
         m_RenderFrameCounter.fetch_add(1, std::memory_order_relaxed);
     }
@@ -238,11 +251,13 @@ void GameEngine::RunRenderThread()
 {
     using clock = std::chrono::steady_clock;
     auto previousTime = clock::now();
+    constexpr auto debugFrameTime = std::chrono::duration<float>(1.0f / 60.0f);
 
     while (m_ThreadManager && m_ThreadManager->IsRunning()) {
+        const auto frameStartTime = clock::now();
         // Render has its own frame clock so it can run independently of the
         // main message loop and physics fixed-step cadence.
-        const auto currentTime = clock::now();
+        const auto currentTime = frameStartTime;
         const std::chrono::duration<float> delta = currentTime - previousTime;
         previousTime = currentTime;
 
@@ -260,6 +275,14 @@ void GameEngine::RunRenderThread()
             // submits/presents the frame on this worker thread.
             m_RenderSystem->Render();
             m_RenderFrameCounter.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        if (m_RenderSystem && m_RenderSystem->GetRenderMode() == RenderMode::MotionVector) {
+            const auto frameEndTime = clock::now();
+            const auto frameElapsed = frameEndTime - frameStartTime;
+            if (frameElapsed < debugFrameTime) {
+                std::this_thread::sleep_for(debugFrameTime - frameElapsed);
+            }
         }
     }
 }

@@ -124,6 +124,7 @@ void RenderSystem::Initialize() {
     
     CreateGBufferPipelineState();
     CreateVelocityPipelineState();
+    CreateMotionVectorDebugPipelineState();
     CreateShadowPipelineState();
     CreateLightingPipelineState();
     CreateBackgroundResolvePipelineState();
@@ -494,6 +495,86 @@ void RenderSystem::CreateVelocityPipelineState() {
     pso.SampleDesc.Count = 1;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_VelocityPipelineState)));
+}
+
+void RenderSystem::CreateMotionVectorDebugPipelineState() {
+    auto device = m_RendererCore->GetDevice();
+
+    D3D12_DESCRIPTOR_RANGE srvTable = {};
+    srvTable.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    srvTable.NumDescriptors = 1;
+    srvTable.BaseShaderRegister = 0;
+    srvTable.RegisterSpace = 0;
+    srvTable.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParameter = {};
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameter.DescriptorTable.NumDescriptorRanges = 1;
+    rootParameter.DescriptorTable.pDescriptorRanges = &srvTable;
+    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplerDesc.ShaderRegister = 0;
+    samplerDesc.RegisterSpace = 0;
+    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+    rootDesc.NumParameters = 1;
+    rootDesc.pParameters = &rootParameter;
+    rootDesc.NumStaticSamplers = 1;
+    rootDesc.pStaticSamplers = &samplerDesc;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    ComPtr<ID3DBlob> sig, err;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&m_MotionVectorDebugRootSignature)));
+
+    const std::wstring shaderPath = L"Renderer/Shaders/MotionVectorDebug.hlsl";
+    ComPtr<ID3DBlob> vs = d3dUtil::CompileShader(shaderPath, nullptr, "VS", "vs_5_0");
+    ComPtr<ID3DBlob> ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
+
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+    blendDesc.RenderTarget[0].BlendEnable = FALSE;
+    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    D3D12_RASTERIZER_DESC rastDesc = {};
+    rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
+    rastDesc.CullMode = D3D12_CULL_MODE_NONE;
+    rastDesc.FrontCounterClockwise = FALSE;
+    rastDesc.DepthClipEnable = FALSE;
+    rastDesc.MultisampleEnable = FALSE;
+    rastDesc.AntialiasedLineEnable = FALSE;
+    rastDesc.ForcedSampleCount = 0;
+    rastDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+    D3D12_DEPTH_STENCIL_DESC dsDesc = {};
+    dsDesc.DepthEnable = FALSE;
+    dsDesc.StencilEnable = FALSE;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    pso.InputLayout = { nullptr, 0 };
+    pso.pRootSignature = m_MotionVectorDebugRootSignature.Get();
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.RasterizerState = rastDesc;
+    pso.BlendState = blendDesc;
+    pso.DepthStencilState = dsDesc;
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    pso.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    pso.SampleDesc.Count = 1;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_MotionVectorDebugPipelineState)));
 }
 
 void RenderSystem::CreateBackgroundResolvePipelineState()
@@ -1143,6 +1224,7 @@ void RenderSystem::Shutdown() {
 
     m_DirectSRMotionVectors.Reset();
     m_DirectSRMotionVectorRTVHeap.Reset();
+    m_DirectSRMotionVectorSRVHeap.Reset();
     m_DirectSRMotionVectorRTV = {};
 
     if (m_RendererCore) {
@@ -1246,6 +1328,19 @@ void RenderSystem::Render() {
     // G-Buffer Pass
     RenderGBufferPass(frameIndex);
     RenderVelocityPass(frameIndex);
+
+    RenderMode renderMode = RenderMode::Composite;
+    {
+        std::lock_guard<std::mutex> lock(m_SettingsMutex);
+        renderMode = m_RenderMode;
+    }
+    if (renderMode == RenderMode::MotionVector) {
+        RenderMotionVectorVisualizationPass();
+        m_RendererCore->EndFrame();
+        m_RendererCore->Present();
+        return;
+    }
+
     RenderBackgroundResolvePass(frameIndex);
 
     // SSGI Pass 
@@ -1740,6 +1835,17 @@ void RenderSystem::CreateDirectSRResources() {
     }
     m_DirectSRMotionVectorRTV = m_DirectSRMotionVectorRTVHeap->GetCPUDescriptorHandleForHeapStart();
 
+    D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+    srvHeapDesc.NumDescriptors = 1;
+    srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    if (FAILED(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_DirectSRMotionVectorSRVHeap)))) {
+        DebugLogDirectSR("DirectSR resource creation failed: motion vector SRV heap could not be created.");
+        m_DirectSRMotionVectorRTVHeap.Reset();
+        m_DirectSRMotionVectorRTV = {};
+        return;
+    }
+
     D3D12_RESOURCE_DESC textureDesc = {};
     textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     textureDesc.Width = m_Width;
@@ -1769,12 +1875,23 @@ void RenderSystem::CreateDirectSRResources() {
         IID_PPV_ARGS(&m_DirectSRMotionVectors));
     if (FAILED(hr)) {
         DebugLogDirectSR("DirectSR resource creation failed: motion vector texture could not be created.");
+        m_DirectSRMotionVectorSRVHeap.Reset();
         m_DirectSRMotionVectorRTVHeap.Reset();
         m_DirectSRMotionVectorRTV = {};
         return;
     }
 
     device->CreateRenderTargetView(m_DirectSRMotionVectors.Get(), nullptr, m_DirectSRMotionVectorRTV);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(
+        m_DirectSRMotionVectors.Get(),
+        &srvDesc,
+        m_DirectSRMotionVectorSRVHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
 void RenderSystem::RenderVelocityPass(UINT frameIndex) {
@@ -1834,6 +1951,61 @@ void RenderSystem::RenderVelocityPass(UINT frameIndex) {
     toDirectSRInput.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     toDirectSRInput.Transition.pResource = m_DirectSRMotionVectors.Get();
     toDirectSRInput.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    toDirectSRInput.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    toDirectSRInput.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toDirectSRInput);
+}
+
+void RenderSystem::RenderMotionVectorVisualizationPass() {
+    if (!m_DirectSRMotionVectors || !m_DirectSRMotionVectorSRVHeap || !m_MotionVectorDebugPipelineState) {
+        return;
+    }
+
+    auto* commandList = m_RendererCore->GetCommandList();
+
+    D3D12_RESOURCE_BARRIER toPixelShaderResource = {};
+    toPixelShaderResource.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toPixelShaderResource.Transition.pResource = m_DirectSRMotionVectors.Get();
+    toPixelShaderResource.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    toPixelShaderResource.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    toPixelShaderResource.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &toPixelShaderResource);
+
+    D3D12_VIEWPORT viewport = {};
+    viewport.TopLeftX = 0.0f;
+    viewport.TopLeftY = 0.0f;
+    viewport.Width = static_cast<float>(m_Width);
+    viewport.Height = static_cast<float>(m_Height);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+
+    D3D12_RECT scissor = {};
+    scissor.left = 0;
+    scissor.top = 0;
+    scissor.right = static_cast<LONG>(m_Width);
+    scissor.bottom = static_cast<LONG>(m_Height);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE backBufferRTV = m_RendererCore->GetCurrentBackBufferRTV();
+    const float clearColor[] = { 0.02f, 0.02f, 0.025f, 1.0f };
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissor);
+    commandList->ClearRenderTargetView(backBufferRTV, clearColor, 0, nullptr);
+    commandList->OMSetRenderTargets(1, &backBufferRTV, FALSE, nullptr);
+    commandList->SetPipelineState(m_MotionVectorDebugPipelineState.Get());
+    commandList->SetGraphicsRootSignature(m_MotionVectorDebugRootSignature.Get());
+
+    ID3D12DescriptorHeap* heaps[] = { m_DirectSRMotionVectorSRVHeap.Get() };
+    commandList->SetDescriptorHeaps(1, heaps);
+    commandList->SetGraphicsRootDescriptorTable(
+        0,
+        m_DirectSRMotionVectorSRVHeap->GetGPUDescriptorHandleForHeapStart());
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->DrawInstanced(3, 1, 0, 0);
+
+    D3D12_RESOURCE_BARRIER toDirectSRInput = {};
+    toDirectSRInput.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toDirectSRInput.Transition.pResource = m_DirectSRMotionVectors.Get();
+    toDirectSRInput.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     toDirectSRInput.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     toDirectSRInput.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &toDirectSRInput);
@@ -1899,6 +2071,9 @@ void RenderSystem::ToggleRenderMode() {
         m_RenderMode = RenderMode::SSGI;
         break;
     case RenderMode::SSGI:
+        m_RenderMode = RenderMode::MotionVector;
+        break;
+    case RenderMode::MotionVector:
         m_RenderMode = RenderMode::Composite;
         break;
     }

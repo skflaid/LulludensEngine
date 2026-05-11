@@ -431,6 +431,9 @@
       <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
     <None Include="Renderer\Shaders\StyleTransferTensor.hlsl" />
+    <None Include="Renderer\Shaders\MotionVectorDebug.hlsl">
+      <Filter>Source Files\Renderer\Shaders</Filter>
+    </None>
     <None Include="Renderer\Shaders\Velocity.hlsl">
       <Filter>Source Files\Renderer\Shaders</Filter>
     </None>
