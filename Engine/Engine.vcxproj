@@ -286,6 +286,9 @@
     <None Include="Renderer\Shaders\StyleTransferTensor.hlsl">
       <FileType>Document</FileType>
     </None>
+    <None Include="Renderer\Shaders\Velocity.hlsl">
+      <FileType>Document</FileType>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <None Include="Renderer\Shaders\Skybox.hlsl">

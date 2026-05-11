@@ -76,19 +76,21 @@ private:
     void CopyFrameToBackBuffer(ID3D12Resource* sourceTexture);
     bool TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputTexture);
     void CreateDirectSRResources();
-    void ClearDirectSRMotionVectors();
+    void RenderVelocityPass(UINT frameIndex);
     void RenderSkyPass(UINT frameIndex);
     // 실제 메시 엔티티 1개를 G-Buffer 패스에 그린다.
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld);
     struct RenderProxy;
     void RenderProxyItem(const RenderProxy& proxy, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld);
+    void RenderVelocityProxyItem(const RenderProxy& proxy, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld);
     // 카메라/라이트/그림자/모드 상수를 프레임 CB에 채운다.
     void UpdatePassConstants(UINT frameIndex);
     // Render-thread entry point for physics/game snapshots each frame.
     void RefreshRenderSnapshot();
     // Looks up interpolated physics world matrices for render proxies.
     const XMFLOAT4X4* FindSnapshotWorld(uint32_t entityId) const;
+    const XMFLOAT4X4* FindPreviousSnapshotWorld(uint32_t entityId) const;
     // Applies queued cross-thread render commands before drawing.
     void ProcessRenderCommands();
     void EnsureMeshResources(MeshComponent* mesh);
@@ -98,6 +100,7 @@ private:
     void CreateShadowResources();
 
     void CreateGBufferPipelineState();
+    void CreateVelocityPipelineState();
     void CreateLightingPipelineState();
     void CreateBackgroundResolvePipelineState();
     void CreateSSGIPipelineState();
@@ -135,6 +138,7 @@ private:
     RenderSnapshotBuilder m_RenderSnapshotBuilder;
     RenderSnapshot m_CurrentRenderSnapshot;
     std::unordered_map<uint32_t, XMFLOAT4X4> m_SnapshotWorldByEntity;
+    std::unordered_map<uint32_t, XMFLOAT4X4> m_PreviousSnapshotWorldByEntity;
     HWND m_Hwnd;
     uint32_t m_Width;
     uint32_t m_Height;
@@ -142,6 +146,8 @@ private:
     // Pipeline states for Deferred Rendering
     ComPtr<ID3D12RootSignature> m_GBufferRootSignature;
     ComPtr<ID3D12PipelineState> m_GBufferPipelineState;
+    ComPtr<ID3D12RootSignature> m_VelocityRootSignature;
+    ComPtr<ID3D12PipelineState> m_VelocityPipelineState;
 
     ComPtr<ID3D12PipelineState> m_ShadowPipelineState;
 
@@ -171,6 +177,10 @@ private:
     // Camera matrices
     XMFLOAT4X4 m_ViewMatrix;
     XMFLOAT4X4 m_ProjMatrix;
+    XMFLOAT4X4 m_CurrentViewProjMatrix;
+    XMFLOAT4X4 m_PreviousViewProjMatrix;
+    bool m_HasCurrentViewProjMatrix = false;
+    bool m_HasPreviousViewProjMatrix = false;
     
     // Lighting
     XMFLOAT4 m_AmbientLight = { 0.6f, 0.6f, 0.6f, 1.0f };
@@ -207,6 +217,10 @@ private:
     ComPtr<ID3D12Resource> m_PassConstantBuffers[FrameCount];
     UINT8* m_PassConstantBufferDataBegin[FrameCount];
     UINT m_PassConstantBufferSize;
+
+    ComPtr<ID3D12Resource> m_VelocityPassConstantBuffers[FrameCount];
+    UINT8* m_VelocityPassConstantBufferDataBegin[FrameCount] = {};
+    UINT m_VelocityPassConstantBufferSize = 0;
 
     // skinned (b3)
     UINT m_SkinningConstantBufferSize = 0;

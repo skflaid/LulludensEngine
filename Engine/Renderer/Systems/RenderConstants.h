@@ -14,6 +14,14 @@ struct SkinningConstants {
 struct ObjectConstants {
     XMFLOAT4X4 gWorld;
     XMFLOAT4X4 gWorldInvTranspose;
+    XMFLOAT4X4 gPrevWorld;
+};
+
+struct VelocityPassConstants {
+    XMFLOAT4X4 gViewProj;
+    XMFLOAT4X4 gPrevViewProj;
+    XMFLOAT2 gRenderTargetSize;
+    XMFLOAT2 gInvRenderTargetSize;
 };
 
 struct RenderMaterialConstants {

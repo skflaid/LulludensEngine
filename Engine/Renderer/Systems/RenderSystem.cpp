@@ -53,7 +53,11 @@ RenderSystem::RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32
         m_ObjectConstantBufferDataBegin[i] = nullptr;
         m_MaterialConstantBufferDataBegin[i] = nullptr;
         m_PassConstantBufferDataBegin[i] = nullptr;
+        m_VelocityPassConstantBufferDataBegin[i] = nullptr;
     }
+
+    XMStoreFloat4x4(&m_CurrentViewProjMatrix, XMMatrixIdentity());
+    XMStoreFloat4x4(&m_PreviousViewProjMatrix, XMMatrixIdentity());
 }
 
 RenderSystem::~RenderSystem() {
@@ -107,7 +111,9 @@ void RenderSystem::Initialize() {
     directSRDesc.TargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     directSRDesc.SourceColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     directSRDesc.SourceDepthFormat = DXGI_FORMAT_R32_FLOAT;
-    directSRDesc.CreateFlags = DSR_SUPERRES_CREATE_ENGINE_FLAG_ENABLE_SHARPENING;
+    directSRDesc.CreateFlags = static_cast<DSR_SUPERRES_CREATE_ENGINE_FLAGS>(
+        DSR_SUPERRES_CREATE_ENGINE_FLAG_ENABLE_SHARPENING |
+        DSR_SUPERRES_CREATE_ENGINE_FLAG_MOTION_VECTORS_USE_TARGET_DIMENSIONS);
     m_DirectSRUpscaler = std::make_unique<DirectSRUpscaler>();
     if (!m_DirectSRUpscaler->Initialize(directSRDesc)) {
 #if defined(_DEBUG)
@@ -117,6 +123,7 @@ void RenderSystem::Initialize() {
     }
     
     CreateGBufferPipelineState();
+    CreateVelocityPipelineState();
     CreateShadowPipelineState();
     CreateLightingPipelineState();
     CreateBackgroundResolvePipelineState();
@@ -161,6 +168,7 @@ void RenderSystem::CreateConstantBuffer() {
     m_ObjectConstantBufferSize = (sizeof(ObjectConstants) + 255) & ~255;
     m_MaterialConstantBufferSize = (sizeof(RenderMaterialConstants) + 255) & ~255;
     m_PassConstantBufferSize = (sizeof(PassConstants) + 255) & ~255;
+    m_VelocityPassConstantBufferSize = (sizeof(VelocityPassConstants) + 255) & ~255;
     m_SkinningConstantBufferSize = (sizeof(SkinningConstants) + 255) & ~255;
 
     D3D12_HEAP_PROPERTIES heapProps = {};
@@ -215,6 +223,18 @@ void RenderSystem::CreateConstantBuffer() {
             IID_PPV_ARGS(&m_PassConstantBuffers[i])
         );
         m_PassConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_PassConstantBufferDataBegin[i]));
+
+        resourceDesc.Width = m_VelocityPassConstantBufferSize;
+        device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&m_VelocityPassConstantBuffers[i])
+        );
+        m_VelocityPassConstantBuffers[i]->Map(0, &readRange,
+            reinterpret_cast<void**>(&m_VelocityPassConstantBufferDataBegin[i]));
 
         resourceDesc.Width = m_SkinningConstantBufferSize;
         device->CreateCommittedResource(
@@ -380,6 +400,100 @@ void RenderSystem::CreateGBufferPipelineState() {
     pso.SampleDesc.Count = 1;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_GBufferPipelineState)));
+}
+
+void RenderSystem::CreateVelocityPipelineState() {
+    auto device = m_RendererCore->GetDevice();
+
+    D3D12_ROOT_PARAMETER rootParameters[3] = {};
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[0].Descriptor.ShaderRegister = 0;
+    rootParameters[0].Descriptor.RegisterSpace = 0;
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[1].Descriptor.ShaderRegister = 1;
+    rootParameters[1].Descriptor.RegisterSpace = 0;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[2].Descriptor.ShaderRegister = 3;
+    rootParameters[2].Descriptor.RegisterSpace = 0;
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+    D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+    rootDesc.NumParameters = _countof(rootParameters);
+    rootDesc.pParameters = rootParameters;
+    rootDesc.NumStaticSamplers = 0;
+    rootDesc.pStaticSamplers = nullptr;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+    ComPtr<ID3DBlob> sig, err;
+    ThrowIfFailed(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err));
+    ThrowIfFailed(device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(),
+        IID_PPV_ARGS(&m_VelocityRootSignature)));
+
+    const std::wstring shaderPath = L"Renderer/Shaders/Velocity.hlsl";
+    ComPtr<ID3DBlob> vs = d3dUtil::CompileShader(shaderPath, nullptr, "VS", "vs_5_0");
+    ComPtr<ID3DBlob> ps = d3dUtil::CompileShader(shaderPath, nullptr, "PS", "ps_5_0");
+
+    D3D12_INPUT_ELEMENT_DESC inputElements[] = {
+        { "POSITION",     0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",       0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD",     0, DXGI_FORMAT_R32G32_FLOAT,       0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "BLENDINDICES", 0, DXGI_FORMAT_R32G32B32A32_UINT,  0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "BLENDWEIGHT",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 48, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+    blendDesc.RenderTarget[0].BlendEnable = FALSE;
+    blendDesc.RenderTarget[0].LogicOpEnable = FALSE;
+    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    D3D12_RASTERIZER_DESC rastDesc = {};
+    rastDesc.FillMode = D3D12_FILL_MODE_SOLID;
+    rastDesc.CullMode = D3D12_CULL_MODE_BACK;
+    rastDesc.FrontCounterClockwise = FALSE;
+    rastDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+    rastDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+    rastDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+    rastDesc.DepthClipEnable = TRUE;
+    rastDesc.MultisampleEnable = FALSE;
+    rastDesc.AntialiasedLineEnable = FALSE;
+    rastDesc.ForcedSampleCount = 0;
+    rastDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+    D3D12_DEPTH_STENCIL_DESC dsDesc = {};
+    dsDesc.DepthEnable = TRUE;
+    dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    dsDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    dsDesc.StencilEnable = TRUE;
+    dsDesc.StencilReadMask = 0xFF;
+    dsDesc.StencilWriteMask = 0x00;
+    dsDesc.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+    dsDesc.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+    dsDesc.BackFace = dsDesc.FrontFace;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    pso.InputLayout = { inputElements, _countof(inputElements) };
+    pso.pRootSignature = m_VelocityRootSignature.Get();
+    pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+    pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+    pso.RasterizerState = rastDesc;
+    pso.BlendState = blendDesc;
+    pso.DepthStencilState = dsDesc;
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = DXGI_FORMAT_R16G16_FLOAT;
+    pso.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    pso.SampleDesc.Count = 1;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_VelocityPipelineState)));
 }
 
 void RenderSystem::CreateBackgroundResolvePipelineState()
@@ -1131,6 +1245,7 @@ void RenderSystem::Render() {
 
     // G-Buffer Pass
     RenderGBufferPass(frameIndex);
+    RenderVelocityPass(frameIndex);
     RenderBackgroundResolvePass(frameIndex);
 
     // SSGI Pass 
@@ -1498,7 +1613,6 @@ bool RenderSystem::TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputText
         + std::to_string(m_Height));
 
     auto* commandList = m_RendererCore->GetCommandList();
-    ClearDirectSRMotionVectors();
 
     D3D12_RESOURCE_BARRIER toDirectSRInputs[2] = {};
     toDirectSRInputs[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -1522,10 +1636,11 @@ bool RenderSystem::TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputText
     upscaleDesc.MotionVectorsTexture = m_DirectSRMotionVectors.Get();
     upscaleDesc.SourceColorRegion = { 0, 0, static_cast<LONG>(m_StyleOutputWidth), static_cast<LONG>(m_StyleOutputHeight) };
     upscaleDesc.SourceDepthRegion = { 0, 0, static_cast<LONG>(m_StyleOutputWidth), static_cast<LONG>(m_StyleOutputHeight) };
-    upscaleDesc.MotionVectorsRegion = { 0, 0, static_cast<LONG>(m_StyleOutputWidth), static_cast<LONG>(m_StyleOutputHeight) };
+    upscaleDesc.MotionVectorsRegion = { 0, 0, static_cast<LONG>(m_Width), static_cast<LONG>(m_Height) };
     upscaleDesc.TargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     upscaleDesc.SourceColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     upscaleDesc.SourceDepthFormat = DXGI_FORMAT_R32_FLOAT;
+    upscaleDesc.MotionVectorScale = { 1.0f, 1.0f };
     upscaleDesc.TimeDeltaInSeconds = m_DeltaTime;
     upscaleDesc.ResetHistory = m_DirectSRResetHistory;
     upscaleDesc.Sharpness = 0.5f;
@@ -1627,8 +1742,8 @@ void RenderSystem::CreateDirectSRResources() {
 
     D3D12_RESOURCE_DESC textureDesc = {};
     textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    textureDesc.Width = m_StyleOutputWidth != 0 ? m_StyleOutputWidth : m_Width;
-    textureDesc.Height = m_StyleOutputHeight != 0 ? m_StyleOutputHeight : m_Height;
+    textureDesc.Width = m_Width;
+    textureDesc.Height = m_Height;
     textureDesc.DepthOrArraySize = 1;
     textureDesc.MipLevels = 1;
     textureDesc.Format = DXGI_FORMAT_R16G16_FLOAT;
@@ -1662,8 +1777,8 @@ void RenderSystem::CreateDirectSRResources() {
     device->CreateRenderTargetView(m_DirectSRMotionVectors.Get(), nullptr, m_DirectSRMotionVectorRTV);
 }
 
-void RenderSystem::ClearDirectSRMotionVectors() {
-    if (!m_DirectSRMotionVectors || m_DirectSRMotionVectorRTV.ptr == 0) {
+void RenderSystem::RenderVelocityPass(UINT frameIndex) {
+    if (!m_DirectSRMotionVectors || m_DirectSRMotionVectorRTV.ptr == 0 || !m_VelocityPipelineState) {
         return;
     }
 
@@ -1679,6 +1794,41 @@ void RenderSystem::ClearDirectSRMotionVectors() {
 
     const float zero[] = { 0.0f, 0.0f, 0.0f, 0.0f };
     commandList->ClearRenderTargetView(m_DirectSRMotionVectorRTV, zero, 0, nullptr);
+
+    D3D12_VIEWPORT viewport = {};
+    viewport.TopLeftX = 0.0f;
+    viewport.TopLeftY = 0.0f;
+    viewport.Width = static_cast<float>(m_Width);
+    viewport.Height = static_cast<float>(m_Height);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+
+    D3D12_RECT scissor = {};
+    scissor.left = 0;
+    scissor.top = 0;
+    scissor.right = static_cast<LONG>(m_Width);
+    scissor.bottom = static_cast<LONG>(m_Height);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_RendererCore->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissor);
+    commandList->OMSetRenderTargets(1, &m_DirectSRMotionVectorRTV, FALSE, &dsvHandle);
+    commandList->SetPipelineState(m_VelocityPipelineState.Get());
+    commandList->SetGraphicsRootSignature(m_VelocityRootSignature.Get());
+    commandList->OMSetStencilRef(1);
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    D3D12_GPU_VIRTUAL_ADDRESS velocityPassCBAddress =
+        m_VelocityPassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetGraphicsRootConstantBufferView(1, velocityPassCBAddress);
+
+    int objectIndex = 0;
+    for (const RenderProxy& proxy : m_RenderProxies) {
+        if (proxy.Active) {
+            RenderVelocityProxyItem(proxy, frameIndex, objectIndex, FindSnapshotWorld(proxy.Id));
+            ++objectIndex;
+        }
+    }
 
     D3D12_RESOURCE_BARRIER toDirectSRInput = {};
     toDirectSRInput.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -1942,6 +2092,9 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     P = XMLoadFloat4x4(&cameraComp->ProjMatrix);
     }
     XMMATRIX VP = XMMatrixMultiply(V, P);
+    XMStoreFloat4x4(&m_CurrentViewProjMatrix, VP);
+    m_HasCurrentViewProjMatrix = true;
+    XMMATRIX prevVP = m_HasPreviousViewProjMatrix ? XMLoadFloat4x4(&m_PreviousViewProjMatrix) : VP;
     
     XMStoreFloat4x4(&passConstants.gView, XMMatrixTranspose(V));
     XMStoreFloat4x4(&passConstants.gInvView, XMMatrixTranspose(XMMatrixInverse(nullptr, V)));
@@ -2066,6 +2219,16 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
 
     // 留덉?留됱뿉 memcpy 洹몃?濡??좎?
     memcpy(m_PassConstantBufferDataBegin[frameIndex], &passConstants, sizeof(PassConstants));
+
+    VelocityPassConstants velocityConstants = {};
+    XMStoreFloat4x4(&velocityConstants.gViewProj, XMMatrixTranspose(VP));
+    XMStoreFloat4x4(&velocityConstants.gPrevViewProj, XMMatrixTranspose(prevVP));
+    velocityConstants.gRenderTargetSize = XMFLOAT2(static_cast<float>(m_Width), static_cast<float>(m_Height));
+    velocityConstants.gInvRenderTargetSize = XMFLOAT2(1.0f / m_Width, 1.0f / m_Height);
+    memcpy(
+        m_VelocityPassConstantBufferDataBegin[frameIndex],
+        &velocityConstants,
+        sizeof(VelocityPassConstants));
 }
 
 void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex) {
@@ -2085,9 +2248,12 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
 
     ObjectConstants objConstants = {};
     XMMATRIX W = snapshotWorld ? XMLoadFloat4x4(snapshotWorld) : transform->GetWorldMatrix();
+    const XMFLOAT4X4* previousSnapshotWorld = FindPreviousSnapshotWorld(entity->GetID());
+    XMMATRIX prevW = previousSnapshotWorld ? XMLoadFloat4x4(previousSnapshotWorld) : W;
     XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
     XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
     XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
+    XMStoreFloat4x4(&objConstants.gPrevWorld, XMMatrixTranspose(prevW));
 
     memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize),
         &objConstants, sizeof(ObjectConstants));
@@ -2191,9 +2357,12 @@ void RenderSystem::RenderProxyItem(const RenderProxy& proxy, UINT frameIndex, in
 
     ObjectConstants objConstants = {};
     XMMATRIX W = snapshotWorld ? XMLoadFloat4x4(snapshotWorld) : transform->GetWorldMatrix();
+    const XMFLOAT4X4* previousSnapshotWorld = FindPreviousSnapshotWorld(proxy.Id);
+    XMMATRIX prevW = previousSnapshotWorld ? XMLoadFloat4x4(previousSnapshotWorld) : W;
     XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
     XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
     XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
+    XMStoreFloat4x4(&objConstants.gPrevWorld, XMMatrixTranspose(prevW));
 
     memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize),
         &objConstants, sizeof(ObjectConstants));
@@ -2283,8 +2452,58 @@ void RenderSystem::RenderProxyItem(const RenderProxy& proxy, UINT frameIndex, in
     }
 }
 
+void RenderSystem::RenderVelocityProxyItem(const RenderProxy& proxy, UINT frameIndex, int objectIndex, const XMFLOAT4X4* snapshotWorld)
+{
+    auto transform = proxy.Transform;
+    auto mesh = proxy.Mesh;
+
+    if (!transform || !mesh || !mesh->vertexBuffer) {
+        return;
+    }
+
+    auto commandList = m_RendererCore->GetCommandList();
+
+    ObjectConstants objConstants = {};
+    XMMATRIX W = snapshotWorld ? XMLoadFloat4x4(snapshotWorld) : transform->GetWorldMatrix();
+    const XMFLOAT4X4* previousSnapshotWorld = FindPreviousSnapshotWorld(proxy.Id);
+    XMMATRIX prevW = previousSnapshotWorld ? XMLoadFloat4x4(previousSnapshotWorld) : W;
+    XMMATRIX WIT = XMMatrixTranspose(XMMatrixInverse(nullptr, W));
+    XMStoreFloat4x4(&objConstants.gWorld, XMMatrixTranspose(W));
+    XMStoreFloat4x4(&objConstants.gWorldInvTranspose, WIT);
+    XMStoreFloat4x4(&objConstants.gPrevWorld, XMMatrixTranspose(prevW));
+
+    memcpy(m_ObjectConstantBufferDataBegin[frameIndex] + (objectIndex * m_ObjectConstantBufferSize),
+        &objConstants, sizeof(ObjectConstants));
+
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = m_ObjectConstantBuffers[frameIndex]->GetGPUVirtualAddress()
+        + (objectIndex * m_ObjectConstantBufferSize);
+    commandList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+
+    D3D12_GPU_VIRTUAL_ADDRESS skinCBAddress =
+        m_SkinningConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetGraphicsRootConstantBufferView(2, skinCBAddress);
+
+    commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);
+    commandList->IASetIndexBuffer(&mesh->indexBufferView);
+
+    if (!mesh->submeshes.empty()) {
+        for (const auto& submesh : mesh->submeshes) {
+            commandList->DrawIndexedInstanced(submesh.indexCount, 1, submesh.startIndex, 0, 0);
+        }
+    }
+    else {
+        commandList->DrawIndexedInstanced(static_cast<UINT>(mesh->indices.size()), 1, 0, 0, 0);
+    }
+}
+
 void RenderSystem::RefreshRenderSnapshot()
 {
+    m_PreviousSnapshotWorldByEntity = m_SnapshotWorldByEntity;
+    if (m_HasCurrentViewProjMatrix) {
+        m_PreviousViewProjMatrix = m_CurrentViewProjMatrix;
+        m_HasPreviousViewProjMatrix = true;
+    }
+
     // Start each frame with an empty render snapshot. If physics has not
     // published yet, draw code falls back to live transform pointers.
     m_CurrentRenderSnapshot.Clear();
@@ -2317,6 +2536,16 @@ const XMFLOAT4X4* RenderSystem::FindSnapshotWorld(uint32_t entityId) const
 {
     auto it = m_SnapshotWorldByEntity.find(entityId);
     if (it == m_SnapshotWorldByEntity.end()) {
+        return nullptr;
+    }
+
+    return &it->second;
+}
+
+const XMFLOAT4X4* RenderSystem::FindPreviousSnapshotWorld(uint32_t entityId) const
+{
+    auto it = m_PreviousSnapshotWorldByEntity.find(entityId);
+    if (it == m_PreviousSnapshotWorldByEntity.end()) {
         return nullptr;
     }
 
