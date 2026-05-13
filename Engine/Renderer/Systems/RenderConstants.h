@@ -20,6 +20,10 @@ struct ObjectConstants {
 struct VelocityPassConstants {
     XMFLOAT4X4 gViewProj;
     XMFLOAT4X4 gPrevViewProj;
+    XMFLOAT4X4 gInvViewNoTranslation;
+    XMFLOAT4X4 gInvProj;
+    XMFLOAT4X4 gPrevViewNoTranslation;
+    XMFLOAT4X4 gPrevProj;
     XMFLOAT2 gRenderTargetSize;
     XMFLOAT2 gInvRenderTargetSize;
 };

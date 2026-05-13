@@ -9,6 +9,10 @@ cbuffer cbVelocityPass : register(b1)
 {
     float4x4 gViewProj;
     float4x4 gPrevViewProj;
+    float4x4 gInvViewNoTranslation;
+    float4x4 gInvProj;
+    float4x4 gPrevViewNoTranslation;
+    float4x4 gPrevProj;
     float2 gRenderTargetSize;
     float2 gInvRenderTargetSize;
 };
@@ -32,6 +36,12 @@ struct VertexOut
     float4 PosH : SV_POSITION;
     float4 CurrentClip : TEXCOORD0;
     float4 PreviousClip : TEXCOORD1;
+};
+
+struct BackgroundVertexOut
+{
+    float4 PosH : SV_POSITION;
+    float2 TexC : TEXCOORD0;
 };
 
 float4 SkinPosition(float4 posL, uint4 boneIndices, float4 boneWeights)
@@ -74,6 +84,30 @@ float4 PS(VertexOut pin) : SV_Target0
 {
     float2 currentUv = ClipToUv(pin.CurrentClip);
     float2 previousUv = ClipToUv(pin.PreviousClip);
+    float2 velocityPixels = (previousUv - currentUv) * gRenderTargetSize;
+    return float4(velocityPixels, 0.0f, 1.0f);
+}
+
+BackgroundVertexOut VSBackground(uint vertexID : SV_VertexID)
+{
+    BackgroundVertexOut vout;
+    vout.TexC = float2((vertexID << 1) & 2, vertexID & 2);
+    vout.PosH = float4(vout.TexC.x * 2.0f - 1.0f, -(vout.TexC.y * 2.0f - 1.0f), 0.0f, 1.0f);
+    return vout;
+}
+
+float4 PSBackground(BackgroundVertexOut pin) : SV_Target0
+{
+    float2 ndc = float2(pin.TexC.x * 2.0f - 1.0f, 1.0f - pin.TexC.y * 2.0f);
+    float4 currentClip = float4(ndc, 1.0f, 1.0f);
+    float4 currentView = mul(currentClip, gInvProj);
+    float3 currentWorldDir = normalize(mul(float4(currentView.xyz, 0.0f), gInvViewNoTranslation).xyz);
+
+    float3 previousViewDir = mul(float4(currentWorldDir, 0.0f), gPrevViewNoTranslation).xyz;
+    float4 previousClip = mul(float4(previousViewDir, 1.0f), gPrevProj);
+
+    float2 currentUv = pin.TexC;
+    float2 previousUv = ClipToUv(previousClip);
     float2 velocityPixels = (previousUv - currentUv) * gRenderTargetSize;
     return float4(velocityPixels, 0.0f, 1.0f);
 }

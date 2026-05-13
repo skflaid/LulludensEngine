@@ -58,6 +58,10 @@ RenderSystem::RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32
 
     XMStoreFloat4x4(&m_CurrentViewProjMatrix, XMMatrixIdentity());
     XMStoreFloat4x4(&m_PreviousViewProjMatrix, XMMatrixIdentity());
+    XMStoreFloat4x4(&m_CurrentViewMatrix, XMMatrixIdentity());
+    XMStoreFloat4x4(&m_PreviousViewMatrix, XMMatrixIdentity());
+    XMStoreFloat4x4(&m_CurrentProjMatrix, XMMatrixIdentity());
+    XMStoreFloat4x4(&m_PreviousProjMatrix, XMMatrixIdentity());
 }
 
 RenderSystem::~RenderSystem() {
@@ -486,6 +490,37 @@ void RenderSystem::CreateVelocityPipelineState() {
     pso.SampleDesc.Count = 1;
 
     ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&m_VelocityPipelineState)));
+
+    ComPtr<ID3DBlob> backgroundVs = d3dUtil::CompileShader(shaderPath, nullptr, "VSBackground", "vs_5_0");
+    ComPtr<ID3DBlob> backgroundPs = d3dUtil::CompileShader(shaderPath, nullptr, "PSBackground", "ps_5_0");
+
+    D3D12_DEPTH_STENCIL_DESC backgroundDsDesc = {};
+    backgroundDsDesc.DepthEnable = FALSE;
+    backgroundDsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    backgroundDsDesc.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+    backgroundDsDesc.StencilEnable = FALSE;
+
+    D3D12_RASTERIZER_DESC backgroundRasterizer = rastDesc;
+    backgroundRasterizer.CullMode = D3D12_CULL_MODE_NONE;
+    backgroundRasterizer.DepthClipEnable = FALSE;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC backgroundPso = {};
+    backgroundPso.InputLayout = { nullptr, 0 };
+    backgroundPso.pRootSignature = m_VelocityRootSignature.Get();
+    backgroundPso.VS = { backgroundVs->GetBufferPointer(), backgroundVs->GetBufferSize() };
+    backgroundPso.PS = { backgroundPs->GetBufferPointer(), backgroundPs->GetBufferSize() };
+    backgroundPso.RasterizerState = backgroundRasterizer;
+    backgroundPso.BlendState = blendDesc;
+    backgroundPso.DepthStencilState = backgroundDsDesc;
+    backgroundPso.SampleMask = UINT_MAX;
+    backgroundPso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    backgroundPso.NumRenderTargets = 1;
+    backgroundPso.RTVFormats[0] = DXGI_FORMAT_R16G16_FLOAT;
+    backgroundPso.SampleDesc.Count = 1;
+
+    ThrowIfFailed(device->CreateGraphicsPipelineState(
+        &backgroundPso,
+        IID_PPV_ARGS(&m_BackgroundVelocityPipelineState)));
 }
 
 void RenderSystem::CreateMotionVectorDebugPipelineState() {
@@ -1919,6 +1954,8 @@ void RenderSystem::RenderVelocityPass(UINT frameIndex) {
     scissor.right = static_cast<LONG>(m_Width);
     scissor.bottom = static_cast<LONG>(m_Height);
 
+    RenderBackgroundVelocity(frameIndex);
+
     // Stencil 1인 geometry 픽셀만 motion vector를 기록한다.
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_RendererCore->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
     commandList->RSSetViewports(1, &viewport);
@@ -1949,6 +1986,42 @@ void RenderSystem::RenderVelocityPass(UINT frameIndex) {
     toDirectSRInput.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     toDirectSRInput.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &toDirectSRInput);
+}
+
+void RenderSystem::RenderBackgroundVelocity(UINT frameIndex)
+{
+    if (!m_BackgroundVelocityPipelineState) {
+        return;
+    }
+
+    auto* commandList = m_RendererCore->GetCommandList();
+
+    D3D12_VIEWPORT viewport = {};
+    viewport.TopLeftX = 0.0f;
+    viewport.TopLeftY = 0.0f;
+    viewport.Width = static_cast<float>(m_Width);
+    viewport.Height = static_cast<float>(m_Height);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+
+    D3D12_RECT scissor = {};
+    scissor.left = 0;
+    scissor.top = 0;
+    scissor.right = static_cast<LONG>(m_Width);
+    scissor.bottom = static_cast<LONG>(m_Height);
+
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissor);
+    commandList->OMSetRenderTargets(1, &m_DirectSRMotionVectorRTV, FALSE, nullptr);
+    commandList->SetPipelineState(m_BackgroundVelocityPipelineState.Get());
+    commandList->SetGraphicsRootSignature(m_VelocityRootSignature.Get());
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    D3D12_GPU_VIRTUAL_ADDRESS velocityPassCBAddress =
+        m_VelocityPassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
+    commandList->SetGraphicsRootConstantBufferView(1, velocityPassCBAddress);
+
+    commandList->DrawInstanced(3, 1, 0, 0);
 }
 
 void RenderSystem::RenderMotionVectorVisualizationPass() {
@@ -2253,9 +2326,13 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     }
     XMMATRIX VP = XMMatrixMultiply(V, P);
     // 현재 VP는 다음 프레임 velocity 계산에서 previous VP로 이동한다.
+    XMStoreFloat4x4(&m_CurrentViewMatrix, V);
+    XMStoreFloat4x4(&m_CurrentProjMatrix, P);
     XMStoreFloat4x4(&m_CurrentViewProjMatrix, VP);
     m_HasCurrentViewProjMatrix = true;
     XMMATRIX prevVP = m_HasPreviousViewProjMatrix ? XMLoadFloat4x4(&m_PreviousViewProjMatrix) : VP;
+    XMMATRIX prevV = m_HasPreviousViewProjMatrix ? XMLoadFloat4x4(&m_PreviousViewMatrix) : V;
+    XMMATRIX prevP = m_HasPreviousViewProjMatrix ? XMLoadFloat4x4(&m_PreviousProjMatrix) : P;
     
     XMStoreFloat4x4(&passConstants.gView, XMMatrixTranspose(V));
     XMStoreFloat4x4(&passConstants.gInvView, XMMatrixTranspose(XMMatrixInverse(nullptr, V)));
@@ -2376,6 +2453,15 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     VelocityPassConstants velocityConstants = {};
     XMStoreFloat4x4(&velocityConstants.gViewProj, XMMatrixTranspose(VP));
     XMStoreFloat4x4(&velocityConstants.gPrevViewProj, XMMatrixTranspose(prevVP));
+    XMMATRIX viewNoTranslation = V;
+    viewNoTranslation.r[3] = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+    XMMATRIX prevViewNoTranslation = prevV;
+    prevViewNoTranslation.r[3] = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+    XMStoreFloat4x4(&velocityConstants.gInvViewNoTranslation,
+        XMMatrixTranspose(XMMatrixInverse(nullptr, viewNoTranslation)));
+    XMStoreFloat4x4(&velocityConstants.gInvProj, XMMatrixTranspose(XMMatrixInverse(nullptr, P)));
+    XMStoreFloat4x4(&velocityConstants.gPrevViewNoTranslation, XMMatrixTranspose(prevViewNoTranslation));
+    XMStoreFloat4x4(&velocityConstants.gPrevProj, XMMatrixTranspose(prevP));
     velocityConstants.gRenderTargetSize = XMFLOAT2(static_cast<float>(m_Width), static_cast<float>(m_Height));
     velocityConstants.gInvRenderTargetSize = XMFLOAT2(1.0f / m_Width, 1.0f / m_Height);
     memcpy(
@@ -2653,6 +2739,8 @@ void RenderSystem::RefreshRenderSnapshot()
 {
     m_PreviousSnapshotWorldByEntity = m_SnapshotWorldByEntity;
     if (m_HasCurrentViewProjMatrix) {
+        m_PreviousViewMatrix = m_CurrentViewMatrix;
+        m_PreviousProjMatrix = m_CurrentProjMatrix;
         m_PreviousViewProjMatrix = m_CurrentViewProjMatrix;
         m_HasPreviousViewProjMatrix = true;
     }

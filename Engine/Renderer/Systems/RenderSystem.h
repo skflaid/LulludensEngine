@@ -84,6 +84,8 @@ private:
     void CreateDirectSRResources();
     // 현재/이전 transform 및 view-projection 차이로 motion vector 텍스처를 렌더링한다.
     void RenderVelocityPass(UINT frameIndex);
+    // skybox/background 픽셀에 카메라 회전 기반 motion vector를 먼저 채운다.
+    void RenderBackgroundVelocity(UINT frameIndex);
     // motion vector 텍스처를 HSV 색상으로 변환해 백버퍼에 직접 표시한다.
     void RenderMotionVectorVisualizationPass();
     // 활성 SkyComponent가 있으면 LightingBuffer 위에 skybox를 합성한다.
@@ -165,6 +167,7 @@ private:
     ComPtr<ID3D12PipelineState> m_GBufferPipelineState;
     ComPtr<ID3D12RootSignature> m_VelocityRootSignature;
     ComPtr<ID3D12PipelineState> m_VelocityPipelineState;
+    ComPtr<ID3D12PipelineState> m_BackgroundVelocityPipelineState;
     ComPtr<ID3D12RootSignature> m_MotionVectorDebugRootSignature;
     ComPtr<ID3D12PipelineState> m_MotionVectorDebugPipelineState;
 
@@ -198,6 +201,10 @@ private:
     // motion vector 계산용 현재/이전 카메라 행렬.
     XMFLOAT4X4 m_ViewMatrix;
     XMFLOAT4X4 m_ProjMatrix;
+    XMFLOAT4X4 m_CurrentViewMatrix;
+    XMFLOAT4X4 m_PreviousViewMatrix;
+    XMFLOAT4X4 m_CurrentProjMatrix;
+    XMFLOAT4X4 m_PreviousProjMatrix;
     XMFLOAT4X4 m_CurrentViewProjMatrix;
     XMFLOAT4X4 m_PreviousViewProjMatrix;
     bool m_HasCurrentViewProjMatrix = false;
