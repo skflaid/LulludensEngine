@@ -30,7 +30,7 @@ float4 PS(VertexOut pin) : SV_Target
     float magnitude = length(velocityPixels);
 
     // 거의 정지한 픽셀은 어두운 배경으로 두어 움직이는 영역만 눈에 띄게 한다.
-    if (magnitude < 0.01f) {
+    if (magnitude < 0.001f) {
         return float4(0.02f, 0.02f, 0.025f, 1.0f);
     }
 
