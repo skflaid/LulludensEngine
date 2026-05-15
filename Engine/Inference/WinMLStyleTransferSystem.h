@@ -58,6 +58,7 @@ private:
     bool UploadOutput();
     void DispatchTensorization();
     void DispatchOutputDetensorization();
+    void CopyOutputTensorToPreviousInput();
     std::wstring GetDefaultModelPath() const;
 
 private:
@@ -70,6 +71,7 @@ private:
     GpuBuffer m_ImageTensorBuffer;
     GpuBuffer m_DepthTensorBuffer;
     GpuBuffer m_NormalTensorBuffer;
+    GpuBuffer m_PreviousStylizedTensorBuffer;
     GpuBuffer m_OutputTensorBuffer;
     GpuBuffer m_DepthMinMaxBuffer;
 
@@ -86,6 +88,7 @@ private:
     bool m_ModelReady = false;
     bool m_OutputReady = false;
     bool m_InputBuffersNeedUavTransition = false;
+    bool m_HasPreviousStylizedInput = false;
 
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     winrt::Windows::AI::MachineLearning::LearningModel m_Model{ nullptr };

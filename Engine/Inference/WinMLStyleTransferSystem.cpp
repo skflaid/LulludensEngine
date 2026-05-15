@@ -171,6 +171,7 @@ void WinMLStyleTransferSystem::Shutdown()
     m_ImageTensorBuffer.resource.Reset();
     m_DepthTensorBuffer.resource.Reset();
     m_NormalTensorBuffer.resource.Reset();
+    m_PreviousStylizedTensorBuffer.resource.Reset();
     m_OutputTensorBuffer.resource.Reset();
     m_DepthMinMaxBuffer.resource.Reset();
     m_TensorizeHeap.Reset();
@@ -185,6 +186,7 @@ void WinMLStyleTransferSystem::Shutdown()
     m_ModelReady = false;
     m_OutputReady = false;
     m_InputBuffersNeedUavTransition = false;
+    m_HasPreviousStylizedInput = false;
 
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     m_Binding = nullptr;
@@ -267,6 +269,13 @@ void WinMLStyleTransferSystem::CreateTensorResources()
         modelPixelCount * 3,
         sizeof(float),
         true,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        m_PreviousStylizedTensorBuffer);
+    CreateStructuredBuffer(
+        device,
+        modelPixelCount * 3,
+        sizeof(float),
+        true,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         m_OutputTensorBuffer);
     CreateStructuredBuffer(
@@ -278,6 +287,7 @@ void WinMLStyleTransferSystem::CreateTensorResources()
         m_DepthMinMaxBuffer);
 
     m_InputBuffersNeedUavTransition = false;
+    m_HasPreviousStylizedInput = false;
 }
 
 void WinMLStyleTransferSystem::CreateDescriptorHeaps()
@@ -461,11 +471,22 @@ bool WinMLStyleTransferSystem::LoadBackend()
             }
         }
 
+        DebugLogA("[WinML] Loading model file.\n");
         m_Model = winrt::Windows::AI::MachineLearning::LearningModel::LoadFromFilePath(m_Config.modelPath);
+        DebugLogA("[WinML] Model file loaded.\n");
+
+        DebugLogA("[WinML] Creating model device.\n");
         m_Device = winrt::Windows::AI::MachineLearning::LearningModelDevice(
             winrt::Windows::AI::MachineLearning::LearningModelDeviceKind::DirectXHighPerformance);
+        DebugLogA("[WinML] Model device created.\n");
+
+        DebugLogA("[WinML] Creating model session.\n");
         m_Session = winrt::Windows::AI::MachineLearning::LearningModelSession(m_Model, m_Device);
+        DebugLogA("[WinML] Model session created.\n");
+
+        DebugLogA("[WinML] Creating model binding.\n");
         m_Binding = winrt::Windows::AI::MachineLearning::LearningModelBinding(m_Session);
+        DebugLogA("[WinML] Model binding created.\n");
 
         std::ostringstream stream;
         stream << "[WinML] Session created. Inputs=" << m_Model.InputFeatures().Size()
@@ -501,8 +522,8 @@ bool WinMLStyleTransferSystem::LoadBackend()
 
         DebugLogA(stream.str());
 
-        if (m_InputNames.size() < 3) {
-            DebugLogA("[WinML] The model must expose at least 3 inputs (image/depth/normal).\n");
+        if (m_InputNames.size() < 4) {
+            DebugLogA("[WinML] The model must expose at least 4 inputs (image/prev_stylized/depth/normal).\n");
             return false;
         }
 
@@ -602,6 +623,15 @@ bool WinMLStyleTransferSystem::CaptureInputs()
     TransitionResource(commandList, m_DepthTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     TransitionResource(commandList, m_NormalTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     TransitionResource(commandList, m_DepthMinMaxBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON);
+
+    if (!m_HasPreviousStylizedInput) {
+        TransitionResource(commandList, m_ImageTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        commandList->CopyResource(m_PreviousStylizedTensorBuffer.resource.Get(), m_ImageTensorBuffer.resource.Get());
+        TransitionResource(commandList, m_ImageTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        TransitionResource(commandList, m_PreviousStylizedTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_HasPreviousStylizedInput = true;
+    }
+
     m_InputBuffersNeedUavTransition = true;
 
     TransitionResource(commandList, m_RendererCore->GetLightingBuffer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -617,8 +647,8 @@ bool WinMLStyleTransferSystem::RunInference()
 {
 #if defined(LULLUDENS_HAS_WINML_STYLE)
     try {
-        if (m_InputNames.size() < 3) {
-            DebugLogA("[WinML] Expected 3 inputs (image/depth/normal).\n");
+        if (m_InputNames.size() < 4) {
+            DebugLogA("[WinML] Expected 4 inputs (image/prev_stylized/depth/normal).\n");
             return false;
         }
 
@@ -650,15 +680,45 @@ bool WinMLStyleTransferSystem::RunInference()
         auto imageTensor = createTensorFromResource(m_ImageTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
         auto depthTensor = createTensorFromResource(m_DepthTensorBuffer.resource.Get(), depthShape, _countof(depthShape));
         auto normalTensor = createTensorFromResource(m_NormalTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
+        auto previousStylizedTensor = createTensorFromResource(m_PreviousStylizedTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
         auto outputTensor = createTensorFromResource(m_OutputTensorBuffer.resource.Get(), imageShape, _countof(imageShape));
 
         winrt::Windows::Foundation::Collections::PropertySet outputBindProperties;
         outputBindProperties.Insert(L"DisableTensorCpuSync", winrt::box_value(true));
 
         m_Binding.Clear();
-        m_Binding.Bind(m_InputNames[0], imageTensor);
-        m_Binding.Bind(m_InputNames[1], depthTensor);
-        m_Binding.Bind(m_InputNames[2], normalTensor);
+        auto findInputName = [&](std::string_view expectedName) -> winrt::hstring {
+            for (const auto& inputName : m_InputNames) {
+                if (winrt::to_string(inputName) == expectedName) {
+                    return inputName;
+                }
+            }
+            return {};
+        };
+
+        const winrt::hstring imageInputName = findInputName("image");
+        const winrt::hstring depthInputName = findInputName("depth");
+        const winrt::hstring normalInputName = findInputName("normal");
+        winrt::hstring previousStylizedInputName = findInputName("prev_stylized");
+        if (previousStylizedInputName.empty()) {
+            previousStylizedInputName = findInputName("prev_stylized_image");
+        }
+
+        if (!imageInputName.empty() &&
+            !depthInputName.empty() &&
+            !normalInputName.empty() &&
+            !previousStylizedInputName.empty()) {
+            m_Binding.Bind(imageInputName, imageTensor);
+            m_Binding.Bind(depthInputName, depthTensor);
+            m_Binding.Bind(normalInputName, normalTensor);
+            m_Binding.Bind(previousStylizedInputName, previousStylizedTensor);
+        }
+        else {
+            m_Binding.Bind(m_InputNames[0], imageTensor);
+            m_Binding.Bind(m_InputNames[1], depthTensor);
+            m_Binding.Bind(m_InputNames[2], normalTensor);
+            m_Binding.Bind(m_InputNames[3], previousStylizedTensor);
+        }
         m_Binding.Bind(m_OutputName, outputTensor, outputBindProperties);
 
         m_Session.Evaluate(m_Binding, L"LulludensWinML");
@@ -675,6 +735,17 @@ bool WinMLStyleTransferSystem::RunInference()
 #else
     return false;
 #endif
+}
+
+void WinMLStyleTransferSystem::CopyOutputTensorToPreviousInput()
+{
+    auto* commandList = m_RendererCore->GetCommandList();
+
+    TransitionResource(commandList, m_OutputTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    TransitionResource(commandList, m_PreviousStylizedTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+    commandList->CopyResource(m_PreviousStylizedTensorBuffer.resource.Get(), m_OutputTensorBuffer.resource.Get());
+    TransitionResource(commandList, m_PreviousStylizedTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionResource(commandList, m_OutputTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 }
 
 void WinMLStyleTransferSystem::DispatchOutputDetensorization()
@@ -709,7 +780,6 @@ bool WinMLStyleTransferSystem::UploadOutput()
     auto* commandList = m_RendererCore->GetCommandList();
 
     TransitionResource(commandList, m_OutputTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-
     if (m_OutputReady) {
         TransitionResource(commandList, m_OutputTexture.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
@@ -723,6 +793,7 @@ bool WinMLStyleTransferSystem::UploadOutput()
 
     TransitionResource(commandList, m_OutputTensorBuffer.resource.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     TransitionResource(commandList, m_OutputTexture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    CopyOutputTensorToPreviousInput();
 
     m_OutputReady = true;
     return true;

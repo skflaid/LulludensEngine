@@ -1,4 +1,4 @@
-﻿#include "App/GameEngine.h"
+#include "App/GameEngine.h"
 #include "Inference/WinMLStyleTransferSystem.h"
 #include "RenderSystem.h"
 #include "../Components/TransformComponent.h"
@@ -99,7 +99,7 @@ void RenderSystem::Initialize() {
     m_SkyRenderer->Initialize(m_RendererCore.get());
 
     WinMLStyleTransferSystem::Config styleConfig = {};
-    styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net4\\net4.onnx";
+    styleConfig.modelPath = L"C:\\LocalRepository\\CapstoneDesign\\Learning\\net5\\net5.onnx";
     styleConfig.inputWidth = 640;
     styleConfig.inputHeight = 360;
     m_StyleOutputWidth = styleConfig.inputWidth != 0 ? styleConfig.inputWidth : m_Width;
@@ -114,6 +114,7 @@ void RenderSystem::Initialize() {
     directSRDesc.TargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     directSRDesc.SourceColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     directSRDesc.SourceDepthFormat = DXGI_FORMAT_R32_FLOAT;
+    directSRDesc.OptimizationType = DSR_OPTIMIZATION_TYPE_MAX_QUALITY;
     directSRDesc.CreateFlags = static_cast<DSR_SUPERRES_CREATE_ENGINE_FLAGS>(
         DSR_SUPERRES_CREATE_ENGINE_FLAG_ENABLE_SHARPENING |
         DSR_SUPERRES_CREATE_ENGINE_FLAG_MOTION_VECTORS_USE_TARGET_DIMENSIONS);
@@ -123,6 +124,32 @@ void RenderSystem::Initialize() {
         OutputDebugStringA(("DirectSR disabled: " + m_DirectSRUpscaler->GetLastError() + "\n").c_str());
 #endif
         m_DirectSRUpscaler.reset();
+    } else {
+#if defined(_DEBUG)
+        const auto& selectedVariant = m_DirectSRUpscaler->GetSelectedVariantDesc();
+        OutputDebugStringA(("DirectSR selected variant: " + std::string(selectedVariant.VariantName)
+            + " flags=" + std::to_string(static_cast<UINT>(selectedVariant.Flags)) + "\n").c_str());
+        DSR_SUPERRES_SOURCE_SETTINGS sourceSettings = {};
+        if (SUCCEEDED(m_DirectSRUpscaler->QuerySourceSettings(
+            m_Width,
+            m_Height,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            sourceSettings))) {
+            OutputDebugStringA(("DirectSR source settings: optimal="
+                + std::to_string(sourceSettings.OptimalSize.Width)
+                + "x"
+                + std::to_string(sourceSettings.OptimalSize.Height)
+                + " min="
+                + std::to_string(sourceSettings.MinDynamicSize.Width)
+                + "x"
+                + std::to_string(sourceSettings.MinDynamicSize.Height)
+                + " max="
+                + std::to_string(sourceSettings.MaxDynamicSize.Width)
+                + "x"
+                + std::to_string(sourceSettings.MaxDynamicSize.Height)
+                + "\n").c_str());
+        }
+#endif
     }
     
     CreateGBufferPipelineState();
@@ -1759,7 +1786,7 @@ bool RenderSystem::TryUpscaleStyleTransferOutput(ID3D12Resource* styleOutputText
     upscaleDesc.MotionVectorScale = { 1.0f, 1.0f };
     upscaleDesc.TimeDeltaInSeconds = m_DeltaTime;
     upscaleDesc.ResetHistory = m_DirectSRResetHistory;
-    upscaleDesc.Sharpness = 0.5f;
+    upscaleDesc.Sharpness = 0.85f;
 
     if (m_Engine && m_Engine->GetMainCamera()) {
         CameraComponent* camera = m_Engine->GetMainCamera()->GetComponent<CameraComponent>();
