@@ -15,6 +15,7 @@
 #include "SkyRenderer.h"
 #include "Threading/SnapshotBuffer.h"
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 
 #pragma comment(lib, "d3dcompiler.lib")
@@ -43,6 +44,72 @@ std::string DirectSRTextureDesc(ID3D12Resource* texture)
 
     const D3D12_RESOURCE_DESC desc = texture->GetDesc();
     return std::to_string(static_cast<UINT>(desc.Width)) + "x" + std::to_string(desc.Height);
+}
+
+std::string DirectSRVariantName(const DSR_SUPERRES_VARIANT_DESC& desc)
+{
+    const size_t length = strnlen_s(desc.VariantName, _countof(desc.VariantName));
+    return std::string(desc.VariantName, length);
+}
+
+std::string DirectSRVariantFlags(const DSR_SUPERRES_VARIANT_DESC& desc)
+{
+    if (desc.Flags == DSR_SUPERRES_VARIANT_FLAG_NONE) {
+        return "none";
+    }
+
+    std::string flags;
+    const auto append = [&flags](const char* name) {
+        if (!flags.empty()) {
+            flags += "|";
+        }
+        flags += name;
+    };
+
+    if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_SUPPORTS_EXPOSURE_SCALE_TEXTURE) != 0) {
+        append("exposure-scale-texture");
+    }
+    if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_SUPPORTS_IGNORE_HISTORY_MASK) != 0) {
+        append("ignore-history-mask");
+    }
+    if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_NATIVE) != 0) {
+        append("native");
+    }
+    if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_SUPPORTS_REACTIVE_MASK) != 0) {
+        append("reactive-mask");
+    }
+    if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_SUPPORTS_SHARPNESS) != 0) {
+        append("sharpness");
+    }
+    if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_DISALLOWS_REGION_OFFSETS) != 0) {
+        append("no-region-offsets");
+    }
+
+    return flags.empty() ? std::to_string(static_cast<UINT>(desc.Flags)) : flags;
+}
+
+void DebugLogDirectSRVariants(const DirectSRUpscaler& upscaler)
+{
+#if defined(_DEBUG)
+    const auto& variants = upscaler.GetAvailableVariants();
+    DebugLogDirectSR("DirectSR available variants: " + std::to_string(variants.size()));
+
+    for (const DirectSRUpscaler::VariantInfo& variant : variants) {
+        const bool selected = variant.Index == upscaler.GetSelectedVariantIndex();
+        DebugLogDirectSR(
+            std::string("  [")
+            + std::to_string(variant.Index)
+            + "] "
+            + DirectSRVariantName(variant.Desc)
+            + " flags="
+            + DirectSRVariantFlags(variant.Desc)
+            + " optimalTargetFormat="
+            + std::to_string(static_cast<UINT>(variant.Desc.OptimalTargetFormat))
+            + (selected ? " <- selected" : ""));
+    }
+#else
+    (void)upscaler;
+#endif
 }
 }
 
@@ -126,8 +193,10 @@ void RenderSystem::Initialize() {
         m_DirectSRUpscaler.reset();
     } else {
 #if defined(_DEBUG)
+        DebugLogDirectSRVariants(*m_DirectSRUpscaler);
         const auto& selectedVariant = m_DirectSRUpscaler->GetSelectedVariantDesc();
-        OutputDebugStringA(("DirectSR selected variant: " + std::string(selectedVariant.VariantName)
+        OutputDebugStringA(("DirectSR selected variant: [" + std::to_string(m_DirectSRUpscaler->GetSelectedVariantIndex())
+            + "] " + DirectSRVariantName(selectedVariant)
             + " flags=" + std::to_string(static_cast<UINT>(selectedVariant.Flags)) + "\n").c_str());
         DSR_SUPERRES_SOURCE_SETTINGS sourceSettings = {};
         if (SUCCEEDED(m_DirectSRUpscaler->QuerySourceSettings(

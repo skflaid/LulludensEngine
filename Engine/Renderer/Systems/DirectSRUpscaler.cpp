@@ -22,6 +22,20 @@ HMODULE TryLoadLibrary(const std::wstring& path)
 {
     return LoadLibraryW(path.c_str());
 }
+
+void DebugLogLoadedDirectSR(HMODULE module)
+{
+#if defined(_DEBUG)
+    wchar_t path[MAX_PATH] = {};
+    if (GetModuleFileNameW(module, path, MAX_PATH) != 0) {
+        OutputDebugStringW(L"Loaded DirectSR.dll: ");
+        OutputDebugStringW(path);
+        OutputDebugStringW(L"\n");
+    }
+#else
+    (void)module;
+#endif
+}
 }
 
 DirectSRUpscaler::~DirectSRUpscaler()
@@ -231,6 +245,7 @@ bool DirectSRUpscaler::LoadDirectSR()
         SetLastError("Failed to load DirectSR.dll. Make sure DirectSR.dll exists next to the executable or under the D3D12 folder.");
         return false;
     }
+    DebugLogLoadedDirectSR(m_DirectSRModule);
 
     auto getFunctionTable = reinterpret_cast<FNDSRExGetVersionedFunctionTable>(
         GetProcAddress(m_DirectSRModule, "DSRExGetVersionedFunctionTable"));
@@ -268,9 +283,28 @@ bool DirectSRUpscaler::LoadDirectSR()
 
 bool DirectSRUpscaler::SelectVariant(UINT preferredVariantIndex)
 {
+    m_AvailableVariants.clear();
+
     const UINT variantCount = m_Table.pfnDSRExSuperResGetNumVariants(m_Device.Get());
     if (variantCount == 0) {
         SetLastError("DirectSR reported no available super resolution variants.");
+        return false;
+    }
+
+    m_AvailableVariants.reserve(variantCount);
+
+    for (UINT index = 0; index < variantCount; ++index) {
+        DSR_SUPERRES_VARIANT_DESC desc = {};
+        HRESULT hr = m_Table.pfnDSRExSuperResEnumVariant(index, m_Device.Get(), &desc);
+        if (FAILED(hr)) {
+            continue;
+        }
+
+        m_AvailableVariants.push_back({ index, desc });
+    }
+
+    if (m_AvailableVariants.empty()) {
+        SetLastError("Failed to enumerate DirectSR super resolution variants.");
         return false;
     }
 
@@ -280,47 +314,28 @@ bool DirectSRUpscaler::SelectVariant(UINT preferredVariantIndex)
             return false;
         }
 
-        HRESULT hr = m_Table.pfnDSRExSuperResEnumVariant(preferredVariantIndex, m_Device.Get(), &m_SelectedVariantDesc);
-        if (FAILED(hr)) {
-            SetLastError("DirectSR EnumVariant failed with HRESULT " + HResultToString(hr) + ".");
-            return false;
+        for (const VariantInfo& variant : m_AvailableVariants) {
+            if (variant.Index == preferredVariantIndex) {
+                m_SelectedVariantIndex = variant.Index;
+                m_SelectedVariantDesc = variant.Desc;
+                return true;
+            }
         }
 
-        m_SelectedVariantIndex = preferredVariantIndex;
-        return true;
+        SetLastError("DirectSR EnumVariant failed for the preferred variant index.");
+        return false;
     }
 
-    UINT fallbackIndex = 0;
-    DSR_SUPERRES_VARIANT_DESC fallbackDesc = {};
-    bool hasFallback = false;
-
-    for (UINT index = 0; index < variantCount; ++index) {
-        DSR_SUPERRES_VARIANT_DESC desc = {};
-        HRESULT hr = m_Table.pfnDSRExSuperResEnumVariant(index, m_Device.Get(), &desc);
-        if (FAILED(hr)) {
-            continue;
-        }
-
-        if (!hasFallback) {
-            fallbackIndex = index;
-            fallbackDesc = desc;
-            hasFallback = true;
-        }
-
-        if ((desc.Flags & DSR_SUPERRES_VARIANT_FLAG_NATIVE) != 0) {
-            m_SelectedVariantIndex = index;
-            m_SelectedVariantDesc = desc;
+    for (const VariantInfo& variant : m_AvailableVariants) {
+        if ((variant.Desc.Flags & DSR_SUPERRES_VARIANT_FLAG_NATIVE) != 0) {
+            m_SelectedVariantIndex = variant.Index;
+            m_SelectedVariantDesc = variant.Desc;
             return true;
         }
     }
 
-    if (!hasFallback) {
-        SetLastError("Failed to enumerate DirectSR super resolution variants.");
-        return false;
-    }
-
-    m_SelectedVariantIndex = fallbackIndex;
-    m_SelectedVariantDesc = fallbackDesc;
+    m_SelectedVariantIndex = m_AvailableVariants.front().Index;
+    m_SelectedVariantDesc = m_AvailableVariants.front().Desc;
     return true;
 }
 
@@ -441,6 +456,7 @@ void DirectSRUpscaler::ResetState()
     m_Table = {};
     m_SelectedVariantIndex = UINT_MAX;
     m_SelectedVariantDesc = {};
+    m_AvailableVariants.clear();
     m_LastSourceSettings = {};
     m_DefaultTargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     m_DefaultSourceColorFormat = DXGI_FORMAT_R8G8B8A8_UNORM;

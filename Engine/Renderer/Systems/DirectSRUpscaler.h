@@ -4,10 +4,16 @@
 #include <d3d12.h>
 #include <dxgi.h>
 #include <string>
+#include <vector>
 #include <wrl/client.h>
 
 class DirectSRUpscaler {
 public:
+    struct VariantInfo {
+        UINT Index = UINT_MAX;
+        DSR_SUPERRES_VARIANT_DESC Desc = {};
+    };
+
     struct InitializeDesc {
         ID3D12Device* Device = nullptr;
         ID3D12CommandQueue* CommandQueue = nullptr;
@@ -65,6 +71,8 @@ public:
     bool IsInitialized() const { return m_Device != nullptr && m_Table.pfnDSRExSuperResExecuteUpscaler != nullptr; }
     ID3D12Resource* GetOutputTexture() const { return m_OutputTexture.Get(); }
     const DSR_SUPERRES_VARIANT_DESC& GetSelectedVariantDesc() const { return m_SelectedVariantDesc; }
+    UINT GetSelectedVariantIndex() const { return m_SelectedVariantIndex; }
+    const std::vector<VariantInfo>& GetAvailableVariants() const { return m_AvailableVariants; }
     const DSR_SUPERRES_SOURCE_SETTINGS& GetLastSourceSettings() const { return m_LastSourceSettings; }
     const std::string& GetLastError() const { return m_LastError; }
 
@@ -106,6 +114,7 @@ private:
     DSR_EX_FUNCTION_TABLE_1_0 m_Table = {};
     UINT m_SelectedVariantIndex = UINT_MAX;
     DSR_SUPERRES_VARIANT_DESC m_SelectedVariantDesc = {};
+    std::vector<VariantInfo> m_AvailableVariants;
     DSR_SUPERRES_SOURCE_SETTINGS m_LastSourceSettings = {};
 
     DXGI_FORMAT m_DefaultTargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;

@@ -21,6 +21,17 @@ void ThrowIfFailedHr(HRESULT hr, const char* call) {
     std::string message = std::string(call) + " failed with HRESULT " + FormatHResult(hr) + ".";
     throw std::runtime_error(message);
 }
+
+void DebugLogAdapterSelection(const DXGI_ADAPTER_DESC1& desc)
+{
+#if defined(_DEBUG)
+    OutputDebugStringW(L"D3D12 selected adapter: ");
+    OutputDebugStringW(desc.Description);
+    OutputDebugStringW(L"\n");
+#else
+    (void)desc;
+#endif
+}
 }
 
 RendererCore::RendererCore()
@@ -82,11 +93,45 @@ void RendererCore::CreateDevice() {
 
     ThrowIfFailedHr(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&m_Factory)), "CreateDXGIFactory2");
 
-    HRESULT hr = D3D12CreateDevice(
-        nullptr,
-        D3D_FEATURE_LEVEL_11_0,
-        IID_PPV_ARGS(&m_Device)
-    );
+    HRESULT hr = E_FAIL;
+
+    ComPtr<IDXGIFactory6> factory6;
+    if (SUCCEEDED(m_Factory.As(&factory6))) {
+        for (UINT adapterIndex = 0; ; ++adapterIndex) {
+            ComPtr<IDXGIAdapter1> adapter;
+            if (factory6->EnumAdapterByGpuPreference(
+                adapterIndex,
+                DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                IID_PPV_ARGS(&adapter)) == DXGI_ERROR_NOT_FOUND) {
+                break;
+            }
+
+            DXGI_ADAPTER_DESC1 adapterDesc = {};
+            adapter->GetDesc1(&adapterDesc);
+            if ((adapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
+                continue;
+            }
+
+            hr = D3D12CreateDevice(
+                adapter.Get(),
+                D3D_FEATURE_LEVEL_11_0,
+                IID_PPV_ARGS(&m_Device)
+            );
+            if (SUCCEEDED(hr)) {
+                DebugLogAdapterSelection(adapterDesc);
+                break;
+            }
+        }
+    }
+
+    if (FAILED(hr)) {
+        hr = D3D12CreateDevice(
+            nullptr,
+            D3D_FEATURE_LEVEL_11_0,
+            IID_PPV_ARGS(&m_Device)
+        );
+    }
+
     if (FAILED(hr)) {
         std::string message = "D3D12CreateDevice failed with HRESULT " + FormatHResult(hr) + ".";
         message += " DirectSR is provided by a preview D3D12 Agility SDK in this project; preview D3D12Core releases require Windows Developer Mode.";
