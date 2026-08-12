@@ -12,6 +12,7 @@ using namespace DirectX;
 static constexpr UINT MAX_BONES = 128;
 
 class GameEngine;
+class EditorUI;
 
 enum class RenderMode {
     Composite,  // Lighting + SSGI
@@ -37,6 +38,11 @@ public:
     void UnregisterEntity(Entity* entity);
 
     void Render();
+    bool HandleEditorMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    bool WantsEditorMouse() const;
+    bool WantsEditorKeyboard() const;
+    bool WantsViewportInput() const;
+    bool IsViewportInputArea(int clientX, int clientY) const;
     void ToggleRenderMode();
     RenderMode GetRenderMode() const { return m_RenderMode; }
 
@@ -64,6 +70,7 @@ private:
     GameEngine* m_Engine = nullptr; // GameEngine 포인터 멤버
 
     std::unique_ptr<RendererCore> m_RendererCore;
+    std::unique_ptr<EditorUI> m_EditorUI;
     std::vector<Entity*> m_RenderableEntities;
     HWND m_Hwnd;
     uint32_t m_Width;
@@ -97,6 +104,7 @@ private:
     // Lighting
     XMFLOAT4 m_AmbientLight = { 0.6f, 0.6f, 0.6f, 1.0f };
     float m_TotalTime = 0.0f;
+    float m_DeltaTime = 1.0f / 60.0f;
     
     // Render mode
     RenderMode m_RenderMode = RenderMode::Composite;

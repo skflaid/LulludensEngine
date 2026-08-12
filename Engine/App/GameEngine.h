@@ -28,6 +28,11 @@ public:
     void Update(float deltaTime);
     void Render();
     void Shutdown();
+    bool HandleEditorMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    bool WantsEditorMouse() const;
+    bool WantsEditorKeyboard() const;
+    bool WantsViewportInput() const;
+    bool IsViewportInputArea(int clientX, int clientY) const;
 
     uint64_t GetEntityCount() const;
     Entity* GetEntityByIndex(uint64_t index);

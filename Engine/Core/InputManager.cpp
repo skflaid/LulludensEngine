@@ -51,6 +51,14 @@ void InputManager::Update() {
         m_MouseDelta = { 0, 0 };
     }
 
+    if (!m_GameplayInputEnabled) {
+        m_MouseDelta = { 0, 0 };
+        for (int i = 0; i < 256; ++i) {
+            m_KeyStates[i] = false;
+        }
+        return;
+    }
+
     // 2. 키보드 상태 갱신
     for (int i = 0; i < 256; ++i) {
         if (GetAsyncKeyState(i) & 0x8000) {
@@ -77,6 +85,17 @@ POINT InputManager::GetMouseDelta() {
 
 void InputManager::SetMousePosition(int x, int y) {
     m_LastMousePos = { x, y };
+}
+
+void InputManager::SetGameplayInputEnabled(bool enabled) {
+    if (m_GameplayInputEnabled == enabled)
+        return;
+
+    m_GameplayInputEnabled = enabled;
+    if (!enabled) {
+        ReleaseMouse();
+        m_MouseDelta = { 0, 0 };
+    }
 }
 
 void InputManager::SetKeyState(int vKey, bool isPressed) {

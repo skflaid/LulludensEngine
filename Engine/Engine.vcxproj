@@ -102,7 +102,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)Libraries\assimp\include\contrib\zlib;$(ProjectDir)Renderer;$(ProjectDir)Physics;$(ProjectDir);$(SolutionDir)Libraries\assimp\include\build;$(SolutionDir)Libraries\assimp\include;$(SolutionDir)Libraries\assimp\lib\$(Configuration);$(ProjectDir)Core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)External\imgui;$(SolutionDir)Libraries\assimp\include\contrib\zlib;$(ProjectDir)Renderer;$(ProjectDir)Physics;$(ProjectDir);$(SolutionDir)Libraries\assimp\include\build;$(SolutionDir)Libraries\assimp\include;$(SolutionDir)Libraries\assimp\lib\$(Configuration);$(ProjectDir)Core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -138,7 +138,7 @@
     <ClInclude Include="..\Common\MathHelper.h" />
     <ClInclude Include="..\Common\UploadBuffer.h" />
     <ClInclude Include="..\Common\WICTextureLoader.h" />
-    <ClInclude Include="App\EntityInspector.h" />
+    <ClInclude Include="App\EditorUI.h" />
     <ClInclude Include="App\GameEngine.h" />
     <ClInclude Include="Core\Entity.h" />
     <ClInclude Include="Core\FBXLoader.h" />
@@ -178,7 +178,7 @@
     <ClCompile Include="..\Common\GeometryGenerator.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
     <ClCompile Include="..\Common\WICTextureLoader.cpp" />
-    <ClCompile Include="App\EntityInspector.cpp" />
+    <ClCompile Include="App\EditorUI.cpp" />
     <ClCompile Include="App\GameEngine.cpp" />
     <ClCompile Include="App\MainApp.cpp" />
     <ClCompile Include="Core\FBXLoader.cpp" />
@@ -194,6 +194,12 @@
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp" />
     <ClCompile Include="Renderer\Systems\CameraSystem.cpp" />
     <ClCompile Include="Renderer\Systems\RenderSystem.cpp" />
+    <ClCompile Include="..\External\imgui\imgui.cpp" />
+    <ClCompile Include="..\External\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\External\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\External\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\External\imgui\backends\imgui_impl_dx12.cpp" />
+    <ClCompile Include="..\External\imgui\backends\imgui_impl_win32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Models\car.txt" />

@@ -1,18 +1,18 @@
 #include <Windows.h>
 #include <cstdint>
 #include "GameEngine.h"
-#include "EntityInspector.h"
 #include "Core/InputManager.h"
 
 // ���� �������� ���� (�ٸ� ��⿡�� ������ �� �����Ƿ� �̸� �״��)
 GameEngine g_Engine;
-EntityInspector g_Inspector;
 HWND g_Hwnd = nullptr;
 bool g_Running = true;
 
 // Window Procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    const bool handledByEditor = g_Engine.HandleEditorMessage(hwnd, msg, wParam, lParam);
+    const bool editorWantsKeyboard = g_Engine.WantsEditorKeyboard();
     switch (msg)
     {
     case WM_DESTROY:
@@ -20,6 +20,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         PostQuitMessage(0);
         return 0;
     case WM_KEYDOWN:
+        if (handledByEditor || editorWantsKeyboard)
+            return 0;
         if (wParam == 'I' || wParam == 'i') {
             // I키를 눌렀을 때 렌더링 모드 토글
             g_Engine.ToggleRenderMode();
@@ -30,9 +32,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         return 0;
     case WM_LBUTTONDOWN:
+    {
         // 왼쪽 마우스 클릭 시 마우스 캡처
-        InputManager::Get()->CaptureMouse();
+        const int mouseX = static_cast<short>(LOWORD(lParam));
+        const int mouseY = static_cast<short>(HIWORD(lParam));
+        if (!handledByEditor && g_Engine.IsViewportInputArea(mouseX, mouseY))
+            InputManager::Get()->CaptureMouse();
         return 0;
+    }
     case WM_RBUTTONDOWN:
         // 오른쪽 마우스 클릭 시 마우스 해제
         InputManager::Get()->ReleaseMouse();
@@ -78,9 +85,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
     if (!g_Hwnd) return -1;
 
     ShowWindow(g_Hwnd, nCmdShow);
-    g_Inspector.Create(g_Hwnd, hInstance);
-    g_Inspector.Show(SW_SHOW);
-
     // InputManager에 윈도우 핸들 전달
     InputManager::Get()->SetWindowHandle(g_Hwnd);
 
@@ -108,7 +112,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         g_Engine.Update(dt);
         g_Engine.Render();
 
-        g_Inspector.Update(&g_Engine);
     }
 
     g_Engine.Shutdown();

@@ -1,4 +1,5 @@
 #include "App/GameEngine.h"
+#include "App/EditorUI.h"
 #include "RenderSystem.h"
 #include "../Components/TransformComponent.h"
 #include "../Components/MeshComponent.h"
@@ -54,6 +55,12 @@ void RenderSystem::Initialize() {
     CreateLightingPipelineState();
     CreateSSGIPipelineState();
     CreateSSGIDenoisePipelineState();
+
+    m_EditorUI = std::make_unique<EditorUI>();
+    if (!m_EditorUI->Initialize(m_Hwnd, m_RendererCore->GetDevice(), m_RendererCore->GetCommandQueue())) {
+        m_EditorUI.reset();
+        OutputDebugStringA("Failed to initialize Dear ImGui editor UI.\n");
+    }
 }
 
 void RenderSystem::InitializeTextures() {
@@ -783,6 +790,7 @@ void RenderSystem::CreateShadowPipelineState() {
 
 void RenderSystem::Update(float deltaTime) {
     m_TotalTime += deltaTime;
+    m_DeltaTime = deltaTime;
 
     // 1) 스켈레톤 가진 엔티티 하나 찾기
     Entity* skinnedEntity = nullptr;
@@ -828,6 +836,14 @@ void RenderSystem::Update(float deltaTime) {
 }
 
 void RenderSystem::Shutdown() {
+    if (m_RendererCore) {
+        m_RendererCore->FlushCommandQueue();
+    }
+    if (m_EditorUI) {
+        m_EditorUI->Shutdown();
+        m_EditorUI.reset();
+    }
+
     for (int i = 0; i < FrameCount; ++i) {
         if (m_ObjectConstantBuffers[i]) {
             m_ObjectConstantBuffers[i]->Unmap(0, nullptr);
@@ -923,8 +939,37 @@ void RenderSystem::Render() {
     // Lighting Pass (모드에 따라 다른 결과 표시)
     RenderLightingPass(frameIndex);
 
+    if (m_EditorUI) {
+        m_EditorUI->Render(m_Engine, m_RendererCore->GetCommandList(), m_DeltaTime);
+    }
+
     m_RendererCore->EndFrame();
     m_RendererCore->Present();
+}
+
+bool RenderSystem::HandleEditorMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    return m_EditorUI && m_EditorUI->HandleWin32Message(hwnd, message, wParam, lParam);
+}
+
+bool RenderSystem::WantsEditorMouse() const
+{
+    return m_EditorUI && m_EditorUI->WantsMouse();
+}
+
+bool RenderSystem::WantsEditorKeyboard() const
+{
+    return m_EditorUI && m_EditorUI->WantsKeyboard();
+}
+
+bool RenderSystem::WantsViewportInput() const
+{
+    return m_EditorUI && m_EditorUI->WantsViewportInput();
+}
+
+bool RenderSystem::IsViewportInputArea(int clientX, int clientY) const
+{
+    return m_EditorUI && m_EditorUI->IsViewportInputArea(clientX, clientY);
 }
 
 void RenderSystem::RenderShadowPass(UINT frameIndex) {

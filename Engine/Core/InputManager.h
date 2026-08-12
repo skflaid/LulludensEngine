@@ -21,6 +21,7 @@ public:
     // WinProc에서 호출될 함수들
     void SetKeyState(int vKey, bool isPressed);
     void SetMousePosition(int x, int y);
+    void SetGameplayInputEnabled(bool enabled);
 
     // 마우스 캡처 관련 함수들 (FPS 카메라용)
     void SetWindowHandle(HWND hwnd);
@@ -53,4 +54,5 @@ private:
     // 마우스 캡처 관련
     HWND m_Hwnd = nullptr;
     bool m_MouseCaptured = false;
+    bool m_GameplayInputEnabled = true;
 };

@@ -34,11 +34,16 @@ void CameraSystem::Update(float deltaTime) {
     if (!cameraComp || !transformComp) return;
 
     // --- 1. 마우스 입력으로 회전 처리 ---
+    const bool cameraInputActive = input->IsCaptured();
     POINT mouseDelta = input->GetMouseDelta();
 
     // public 멤버인 rotation에 직접 접근
-    transformComp->rotation.y += mouseDelta.x * cameraComp->LookSpeed * deltaTime; // Yaw
-    transformComp->rotation.x += mouseDelta.y * cameraComp->LookSpeed * deltaTime; // Pitch
+    if (cameraInputActive) {
+        // Mouse delta is already accumulated per frame. Applying deltaTime a
+        // second time made look sensitivity depend on frame rate.
+        transformComp->rotation.y += mouseDelta.x * cameraComp->LookSpeed; // Yaw
+        transformComp->rotation.x += mouseDelta.y * cameraComp->LookSpeed; // Pitch
+    }
 
     // Pitch 각도 제한
     transformComp->rotation.x = std::max(-XM_PIDIV2 + 0.1f, std::min(XM_PIDIV2 - 0.1f, transformComp->rotation.x));
@@ -50,12 +55,12 @@ void CameraSystem::Update(float deltaTime) {
     XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
     XMVECTOR position = XMLoadFloat3(&transformComp->position);
-    if (input->IsKeyPressed('W')) { position += forward * cameraComp->MoveSpeed * deltaTime; }
-    if (input->IsKeyPressed('S')) { position -= forward * cameraComp->MoveSpeed * deltaTime; }
-    if (input->IsKeyPressed('A')) { position -= right * cameraComp->MoveSpeed * deltaTime; }
-    if (input->IsKeyPressed('D')) { position += right * cameraComp->MoveSpeed * deltaTime; }
-    if (input->IsKeyPressed('E')) { position += worldUp * cameraComp->MoveSpeed * deltaTime; } // E 키: 위로 상승
-    if (input->IsKeyPressed('Q')) { position -= worldUp * cameraComp->MoveSpeed * deltaTime; } // Q 키: 아래로 하강
+    if (cameraInputActive && input->IsKeyPressed('W')) { position += forward * cameraComp->MoveSpeed * deltaTime; }
+    if (cameraInputActive && input->IsKeyPressed('S')) { position -= forward * cameraComp->MoveSpeed * deltaTime; }
+    if (cameraInputActive && input->IsKeyPressed('A')) { position -= right * cameraComp->MoveSpeed * deltaTime; }
+    if (cameraInputActive && input->IsKeyPressed('D')) { position += right * cameraComp->MoveSpeed * deltaTime; }
+    if (cameraInputActive && input->IsKeyPressed('E')) { position += worldUp * cameraComp->MoveSpeed * deltaTime; }
+    if (cameraInputActive && input->IsKeyPressed('Q')) { position -= worldUp * cameraComp->MoveSpeed * deltaTime; }
 
     XMStoreFloat3(&transformComp->position, position);
 

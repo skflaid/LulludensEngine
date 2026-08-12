@@ -60,7 +60,9 @@ bool GameEngine::Initialize(HWND hwnd, uint32_t width, uint32_t height)
 
 void GameEngine::Update(float deltaTime)
 {
-    InputManager::Get()->Update();
+    InputManager* input = InputManager::Get();
+    input->SetGameplayInputEnabled(input->IsCaptured() || WantsViewportInput());
+    input->Update();
 
     if (m_CameraSystem) m_CameraSystem->Update(deltaTime);
     if (m_PhysicsScheduler) m_PhysicsScheduler->Update(deltaTime);
@@ -71,6 +73,31 @@ void GameEngine::Update(float deltaTime)
 void GameEngine::Render()
 {
     if (m_RenderSystem) m_RenderSystem->Render();
+}
+
+bool GameEngine::HandleEditorMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    return m_RenderSystem && m_RenderSystem->HandleEditorMessage(hwnd, message, wParam, lParam);
+}
+
+bool GameEngine::WantsEditorMouse() const
+{
+    return m_RenderSystem && m_RenderSystem->WantsEditorMouse();
+}
+
+bool GameEngine::WantsEditorKeyboard() const
+{
+    return m_RenderSystem && m_RenderSystem->WantsEditorKeyboard();
+}
+
+bool GameEngine::WantsViewportInput() const
+{
+    return m_RenderSystem && m_RenderSystem->WantsViewportInput();
+}
+
+bool GameEngine::IsViewportInputArea(int clientX, int clientY) const
+{
+    return m_RenderSystem && m_RenderSystem->IsViewportInputArea(clientX, clientY);
 }
 
 void GameEngine::ToggleRenderMode()

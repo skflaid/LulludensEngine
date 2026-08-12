@@ -72,7 +72,7 @@
     <ClInclude Include="App\GameEngine.h">
       <Filter>헤더 파일\App</Filter>
     </ClInclude>
-    <ClInclude Include="App\EntityInspector.h">
+    <ClInclude Include="App\EditorUI.h">
       <Filter>헤더 파일\App</Filter>
     </ClInclude>
     <ClInclude Include="Core\ISystem.h">
@@ -188,7 +188,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="App\EntityInspector.cpp">
+    <ClCompile Include="App\EditorUI.cpp">
       <Filter>소스 파일\App</Filter>
     </ClCompile>
     <ClCompile Include="App\MainApp.cpp">
