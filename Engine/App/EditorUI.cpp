@@ -363,7 +363,17 @@ void EditorUI::DrawInspector(GameEngine* engine)
 
     if (auto* body = entity->GetComponent<RigidbodyComponent>(); body && ImGui::CollapsingHeader("Rigidbody"))
     {
-        ImGui::DragFloat("Mass", &body->mass, 0.05f, 0.001f, 10000.0f);
+        float mass = body->GetMass();
+
+        if (ImGui::DragFloat(
+            "Mass",
+            &mass,
+            0.05f,
+            0.001f,
+            10000.0f))
+        {
+            body->SetMass(mass);
+        }
         ImGui::Checkbox("Use Gravity", &body->useGravity);
         ImGui::Checkbox("Kinematic", &body->isKinematic);
     }

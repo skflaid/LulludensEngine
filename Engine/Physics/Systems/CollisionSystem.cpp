@@ -923,8 +923,8 @@ void CollisionSystem::ResolveCollisions() {
         if (!collA || !pair.entityB->GetCollider()) continue;
 
         // 2. 질량 및 관성 설정
-        float invMassA = (rbA && !rbA->isKinematic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
-        float invMassB = (rbB && !rbB->isKinematic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
+        float invMassA = (rbA && !rbA->isKinematic && rbA->GetMass() > 0.0f) ? 1.0f / rbA->GetMass() : 0.0f;
+        float invMassB = (rbB && !rbB->isKinematic && rbB->GetMass() > 0.0f) ? 1.0f / rbB->GetMass() : 0.0f;
         float invInertiaA = (rbA && !rbA->isKinematic && rbA->inertia > 0.0f) ? 1.0f / rbA->inertia : 0.0f;
         float invInertiaB = (rbB && !rbB->isKinematic && rbB->inertia > 0.0f) ? 1.0f / rbB->inertia : 0.0f;
 

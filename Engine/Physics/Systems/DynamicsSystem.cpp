@@ -63,12 +63,20 @@ void DynamicsSystem::Update(float deltaTime) {
     }
 }
 
+// 중력은 모두 동일하게 적용되니까 힘으로 계산되지 않도록
 void DynamicsSystem::ApplyGravity(Entity* entity, float deltaTime) {
     auto* rb = entity->GetComponent<RigidbodyComponent>();
-    // useGravity가 true이면 일단 중력을 더합니다.
-    if (rb->useGravity && !rb->isKinematic) {
-        rb->AddForce(m_PhysicsWorld->GetGravity());
+    if (!rb)
+        return;
+
+    if (!rb->useGravity || rb->isKinematic)
+    {
+        rb->acceleration = { 0.0f, 0.0f, 0.0f };
+        return;
     }
+
+    // 중력은 힘이 아니라 가속도로 직접 적용
+    rb->acceleration = m_PhysicsWorld->GetGravity();
 }
 
 
@@ -136,16 +144,25 @@ void DynamicsSystem::IntegrateVelocity(Entity* entity, float deltaTime) {
     auto* rb = entity->GetComponent<RigidbodyComponent>();
     if (rb->isKinematic) return;
 
-    // a = F / m
-    XMVECTOR acc = XMLoadFloat3(&rb->forceAccumulator);
-    acc = XMVectorScale(acc, 1.0f / rb->mass);
-    XMStoreFloat3(&rb->acceleration, acc);
+    // 기본 가속도 (중력)
+    XMVECTOR acceleration = XMLoadFloat3(&rb->acceleration);
+
+    // 외부 힘으로 발생한 가속도
+    XMVECTOR force = XMLoadFloat3(&rb->forceAccumulator);
+
+    XMVECTOR forceAcceleration = XMVectorScale(force, rb->GetInverseMass());
+
+    // 최종 가속도
+    acceleration = XMVectorAdd(acceleration, forceAcceleration);
 
     // v = v0 + a*t
-    XMVECTOR vel = XMLoadFloat3(&rb->velocity);
-    vel = XMVectorAdd(vel, XMVectorScale(acc, deltaTime));
-    vel *= (1.0f - rb->linearDamping);
-    XMStoreFloat3(&rb->velocity, vel);
+    XMVECTOR velocity = XMLoadFloat3(&rb->velocity);
+    velocity = XMVectorAdd(velocity, XMVectorScale(acceleration, deltaTime));
+    
+    // Damping
+    velocity *= (1.0f - rb->linearDamping);
+
+    XMStoreFloat3(&rb->velocity, velocity);
 }
 
 void DynamicsSystem::IntegratePosition(Entity* entity, float deltaTime) {

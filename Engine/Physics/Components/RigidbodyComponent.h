@@ -10,8 +10,13 @@ struct RigidbodyComponent : public IComponent {
     XMFLOAT3 velocity = { 0.0f, 0.0f, 0.0f };
     XMFLOAT3 acceleration = { 0.0f, 0.0f, 0.0f };
     XMFLOAT3 angularVelocity = { 0.0f, 0.0f, 0.0f };
-
+    
+private:
     float mass = 1.0f;
+    float inverseMass = 1.0f;
+
+public:
+
     float angularDrag = 0.05f;
     bool useGravity = true;
     bool isKinematic = false;
@@ -31,6 +36,35 @@ struct RigidbodyComponent : public IComponent {
     // Force accumulation
     XMFLOAT3 forceAccumulator = { 0.0f, 0.0f, 0.0f };
     XMFLOAT3 torqueAccumulator = { 0.0f, 0.0f, 0.0f };
+
+public:
+    void SetMass(float newMass)
+    {
+        if (newMass <= 0.0f)
+        {
+            mass = 0.0f;
+            inverseMass = 0.0f;
+            return;
+        }
+
+        mass = newMass;
+        inverseMass = 1.0f / mass;
+    }
+
+    float GetMass() const
+    {
+        return mass;
+    }
+
+    float GetInverseMass() const
+    {
+        return inverseMass;
+    }
+
+    bool HasFiniteMass() const
+    {
+        return inverseMass > 0.0f;
+    }
 
     void AddForce(const XMFLOAT3& force) {
         XMVECTOR f = XMLoadFloat3(&forceAccumulator);

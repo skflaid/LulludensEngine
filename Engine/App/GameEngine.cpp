@@ -152,7 +152,7 @@ void GameEngine::CreateEntities()
         auto t = cube->AddComponent<TransformComponent>();
         t->SetPosition(0.0f, 20.0f, 0.0f);
         t->SetScale(1.0f, 1.0f, 1.0f);
-        cube->AddComponent<RigidbodyComponent>()->mass = 1.0f;
+        cube->AddComponent<RigidbodyComponent>()->SetMass(1.0f);
         cube->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
         cube->AddComponent<MeshComponent>()->CreateCube();
         cube->AddComponent<MaterialComponent>()->SetAlbedo(0.8f, 0.3f, 0.3f);
