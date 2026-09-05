@@ -32,7 +32,7 @@ private:
 
     void DrawMainMenu();
     void DrawSceneOutliner(GameEngine* engine);
-    void DrawViewportOverlay();
+    void DrawViewportOverlay(GameEngine* engine);
     void DrawInspector(GameEngine* engine);
     void DrawContentDrawer();
     void DrawStatusBar(GameEngine* engine);

@@ -17,7 +17,9 @@ class EditorUI;
 enum class RenderMode {
     Composite,  // Lighting + SSGI
     Lighting,   // Lighting only
-    SSGI        // SSGI only
+    SSGI,       // SSGI only
+    Normal,     // G-Buffer world normal
+    Depth       // Linear view-space depth
 };
 
 class RenderSystem : public ISystem {
@@ -44,6 +46,7 @@ public:
     bool WantsViewportInput() const;
     bool IsViewportInputArea(int clientX, int clientY) const;
     void ToggleRenderMode();
+    void SetRenderMode(RenderMode mode) { m_RenderMode = mode; }
     RenderMode GetRenderMode() const { return m_RenderMode; }
 
 private:

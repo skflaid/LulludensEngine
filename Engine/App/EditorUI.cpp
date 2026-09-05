@@ -7,6 +7,7 @@
 #include "Renderer/Components/MaterialComponent.h"
 #include "Renderer/Components/MeshComponent.h"
 #include "Renderer/Components/TransformComponent.h"
+#include "Renderer/Systems/RenderSystem.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -62,10 +63,15 @@ bool EditorUI::Initialize(HWND hwnd, ID3D12Device* device, ID3D12CommandQueue* c
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
     ImGui::StyleColorsDark();
+    // The central dock node is an overlay over the renderer backbuffer. Keep
+    // an empty central docking area transparent while regular windows keep
+    // the dark editor theme.
+    ImGui::GetStyle().Colors[ImGuiCol_DockingEmptyBg] =
+        ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
     ImGui_ImplWin32_Init(m_Hwnd);
 
-    ImGui_ImplDX12_InitInfo initInfo;
+    ImGui_ImplDX12_InitInfo initInfo = {};
     initInfo.Device = device;
     initInfo.CommandQueue = commandQueue;
     initInfo.NumFramesInFlight = 2;
@@ -113,7 +119,31 @@ void EditorUI::Render(GameEngine* engine, ID3D12GraphicsCommandList* commandList
         m_SmoothedFrameTime += (frameDeltaTime - m_SmoothedFrameTime) * 0.1f;
     }
 
-    const ImGuiID dockspaceId = ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
+    // Composition probe: submit an empty ImGui frame. This deliberately
+    // skips all windows and docking so we can distinguish a window background
+    // problem from an ImGui DX12 backend/render-state problem.
+    static constexpr bool kCompositionProbe = false;
+    if (kCompositionProbe)
+    {
+        ImGui::Render();
+        ID3D12DescriptorHeap* heaps[] = { m_SrvHeap.Get() };
+        commandList->SetDescriptorHeaps(1, heaps);
+        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+        return;
+    }
+
+    // The 3D scene is rendered directly into the swap chain.  Keep the
+    // central dock node transparent so ImGui does not lay an opaque editor
+    // background over the scene.
+    // The central dock area is an overlay over the renderer's swap-chain
+    // backbuffer. Keep only this dockspace background transparent; regular
+    // editor panels retain their normal dark backgrounds.
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    const ImGuiID dockspaceId = ImGui::DockSpaceOverViewport(
+        0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::PopStyleColor(3);
     if (!m_LayoutInitialized)
     {
         ImGui::DockBuilderRemoveNode(dockspaceId);
@@ -140,7 +170,7 @@ void EditorUI::Render(GameEngine* engine, ID3D12GraphicsCommandList* commandList
 
     DrawMainMenu();
     DrawSceneOutliner(engine);
-    DrawViewportOverlay();
+    DrawViewportOverlay(engine);
     DrawInspector(engine);
     DrawContentDrawer();
     DrawStatusBar(engine);
@@ -280,9 +310,19 @@ void EditorUI::DrawSceneOutliner(GameEngine* engine)
     ImGui::End();
 }
 
-void EditorUI::DrawViewportOverlay()
+void EditorUI::DrawViewportOverlay(GameEngine* engine)
 {
-    ImGui::Begin("Scene Viewport", nullptr, ImGuiWindowFlags_NoBackground);
+    // This window is an overlay only; the actual scene already exists in the
+    // swap-chain back buffer underneath it.  Explicitly force a zero-alpha
+    // background in addition to NoBackground because docked windows can
+    // otherwise inherit the global WindowBg style color.
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.0f);
+    ImGui::Begin("Scene Viewport", nullptr,
+        ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::TextDisabled("Scene");
     ImGui::SameLine();
     ImGui::Button("Select");
@@ -293,7 +333,37 @@ void EditorUI::DrawViewportOverlay()
     ImGui::SameLine();
     ImGui::Button("Scale");
     ImGui::SameLine();
-    ImGui::TextDisabled("Lit");
+    ImGui::TextDisabled("Render");
+
+    RenderMode renderMode = RenderMode::Composite;
+    if (engine && engine->GetRenderSystem())
+        renderMode = engine->GetRenderSystem()->GetRenderMode();
+
+    static constexpr const char* kRenderModeLabels[] = {
+        "Composite",
+        "Only Lighting",
+        "Only SSGI",
+        "Normal",
+        "Depth"
+    };
+    int selectedMode = static_cast<int>(renderMode);
+    ImGui::SetNextItemWidth(150.0f);
+    if (ImGui::BeginListBox("##render-mode", ImVec2(150.0f, 0.0f)))
+    {
+        for (int modeIndex = 0; modeIndex < IM_ARRAYSIZE(kRenderModeLabels); ++modeIndex)
+        {
+            const bool selected = selectedMode == modeIndex;
+            if (ImGui::Selectable(kRenderModeLabels[modeIndex], selected))
+            {
+                selectedMode = modeIndex;
+                if (engine)
+                    engine->SetRenderMode(static_cast<RenderMode>(selectedMode));
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndListBox();
+    }
 
     const ImVec2 toolbarBottomRight = ImGui::GetItemRectMax();
     const ImVec2 windowPos = ImGui::GetWindowPos();
@@ -309,6 +379,7 @@ void EditorUI::DrawViewportOverlay()
         mousePosition.y >= m_ViewportInputTop && mousePosition.y <= m_ViewportInputBottom &&
         !ImGui::IsAnyItemActive();
     ImGui::End();
+    ImGui::PopStyleColor(2);
 }
 
 void EditorUI::DrawInspector(GameEngine* engine)

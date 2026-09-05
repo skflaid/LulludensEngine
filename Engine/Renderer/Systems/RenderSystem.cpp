@@ -1168,6 +1168,12 @@ void RenderSystem::ToggleRenderMode() {
         m_RenderMode = RenderMode::SSGI;
         break;
     case RenderMode::SSGI:
+        m_RenderMode = RenderMode::Normal;
+        break;
+    case RenderMode::Normal:
+        m_RenderMode = RenderMode::Depth;
+        break;
+    case RenderMode::Depth:
         m_RenderMode = RenderMode::Composite;
         break;
     }

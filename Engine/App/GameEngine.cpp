@@ -105,6 +105,11 @@ void GameEngine::ToggleRenderMode()
     if (m_RenderSystem) m_RenderSystem->ToggleRenderMode();
 }
 
+void GameEngine::SetRenderMode(RenderMode mode)
+{
+    if (m_RenderSystem) m_RenderSystem->SetRenderMode(mode);
+}
+
 void GameEngine::Shutdown()
 {
     if (m_RenderSystem) { m_RenderSystem->Shutdown(); m_RenderSystem.reset(); }
@@ -132,8 +137,12 @@ void GameEngine::CreateEntities()
 {
     // ======== 메인 카메라 생성 ========
     auto cameraEntity = std::make_unique<Entity>(4); // ID 4번으로 카메라 생성
-    cameraEntity->AddComponent<TransformComponent>();
+    auto cameraTransform = cameraEntity->AddComponent<TransformComponent>();
     auto cameraComp = cameraEntity->AddComponent<CameraComponent>();
+
+    // Start inside the SSGI test room, looking toward the back wall.
+    cameraTransform->SetPosition(0.0f, 3.0f, -8.0f);
+    cameraTransform->SetRotation(-0.12f, 0.0f, 0.0f);
 
     // RenderSystem으로부터 화면 너비와 높이를 가져옵니다.
     float width = static_cast<float>(m_RenderSystem->GetWidth());
@@ -146,38 +155,53 @@ void GameEngine::CreateEntities()
     SetMainCamera(cameraEntity.get()); // 메인 카메라로 등록
     m_Entities.push_back(std::move(cameraEntity));
 
-    // Cube
-    for (int i = 0; i < 5; i++) {
-        auto cube = std::make_unique<Entity>(5+i);
-        auto t = cube->AddComponent<TransformComponent>();
-        t->SetPosition(0.0f, 20.0f, 0.0f);
-        t->SetScale(1.0f, 1.0f, 1.0f);
-        cube->AddComponent<RigidbodyComponent>()->SetMass(1.0f);
-        cube->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
-        cube->AddComponent<MeshComponent>()->CreateCube();
-        cube->AddComponent<MaterialComponent>()->SetAlbedo(0.8f, 0.3f, 0.3f);
+    // ======== SSGI test room ========
+    // Room bounds: x=[-5,5], y=[0,6], z=[0,10]. Each surface is a thin cube
+    // with a solid color so indirect color bleeding is easy to inspect.
+    auto createRoomSurface = [this](uint32_t id, const XMFLOAT3& position,
+        const XMFLOAT3& scale, const XMFLOAT3& color)
+    {
+        auto surface = std::make_unique<Entity>(id);
+        auto transform = surface->AddComponent<TransformComponent>();
+        transform->SetPosition(position.x, position.y, position.z);
+        transform->SetScale(scale.x, scale.y, scale.z);
 
-        m_PhysicsWorld->RegisterEntity(cube.get());
-        m_RenderSystem->RegisterEntity(cube.get());
-        m_Entities.push_back(std::move(cube));
-    }
+        auto rigidbody = surface->AddComponent<RigidbodyComponent>();
+        rigidbody->isKinematic = true;
+        surface->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
+        surface->AddComponent<MeshComponent>()->CreateCube();
+        surface->AddComponent<MaterialComponent>()->SetAlbedo(color.x, color.y, color.z);
 
-    // Ground
-    auto ground = std::make_unique<Entity>(2);
-    auto gt = ground->AddComponent<TransformComponent>();
-    gt->SetPosition(0.0f, 0.0f, 0.0f);
-    gt->SetScale(10.0f, 1.1f, 10.0f);
-    gt->SetRotation(0.50f, 0.0f, 0.0f);
-    auto rb = ground->AddComponent<RigidbodyComponent>();
-    rb->isKinematic = true;
-    ground->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
-    ground->AddComponent<MeshComponent>()->CreateCube();
-    ground->AddComponent<MaterialComponent>()->SetAlbedo(0.3f, 0.8f, 0.3f);
-    ground->GetComponent<MaterialComponent>()->albedoTextureName = "bricks3";
+        m_PhysicsWorld->RegisterEntity(surface.get());
+        m_RenderSystem->RegisterEntity(surface.get());
+        m_Entities.push_back(std::move(surface));
+    };
 
-    m_PhysicsWorld->RegisterEntity(ground.get());
-    m_RenderSystem->RegisterEntity(ground.get());
-    m_Entities.push_back(std::move(ground));
+    // White floor.
+    createRoomSurface(10, { 0.0f, 0.0f, 3.0f }, { 10.0f, 0.1f, 10.0f }, { 1.0f, 1.0f, 1.0f });
+    // Blue wall on the camera's left side.
+    createRoomSurface(11, { -5.0f, 3.0f, 3.0f }, { 0.1f, 6.0f, 10.0f }, { 0.05f, 0.2f, 1.0f });
+    // Red wall on the camera's right side.
+    createRoomSurface(12, { 5.0f, 3.0f, 3.0f }, { 0.1f, 6.0f, 10.0f }, { 1.0f, 0.08f, 0.05f });
+    // Yellow ceiling.
+    createRoomSurface(13, { 0.0f, 6.0f, 3.0f }, { 10.0f, 0.1f, 10.0f }, { 1.0f, 0.85f, 0.05f });
+    // White back wall to receive the colored indirect light from both sides.
+    createRoomSurface(15, { 0.0f, 3.0f, 8.0f }, { 10.0f, 6.0f, 0.1f }, { 1.0f, 1.0f, 1.0f });
+
+    // Small white receiver object in the middle of the room.
+    auto testCube = std::make_unique<Entity>(14);
+    auto cubeTransform = testCube->AddComponent<TransformComponent>();
+    cubeTransform->SetPosition(0.0f, 1.0f, 3.0f);
+    cubeTransform->SetScale(1.0f, 1.0f, 1.0f);
+    auto cubeRigidbody = testCube->AddComponent<RigidbodyComponent>();
+    cubeRigidbody->isKinematic = true;
+    testCube->AddComponent<BoxCollider>()->size = { 1.0f, 1.0f, 1.0f };
+    testCube->AddComponent<MeshComponent>()->CreateCube();
+    testCube->AddComponent<MaterialComponent>()->SetAlbedo(1.0f, 1.0f, 1.0f);
+
+    m_PhysicsWorld->RegisterEntity(testCube.get());
+    m_RenderSystem->RegisterEntity(testCube.get());
+    m_Entities.push_back(std::move(testCube));
 
     // FBX 모델 로드 예제
     // 주의: 실제 FBX 파일 경로로 변경해야 합니다.

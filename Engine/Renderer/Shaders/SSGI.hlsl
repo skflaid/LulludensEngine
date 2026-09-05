@@ -46,7 +46,9 @@ SamplerState gsamPointWrap : register(s0);
 static const float SSGI_RAY_STEP = 0.1f;
 static const float SSGI_MAX_DISTANCE = 4.0f;
 static const int SSGI_NUM_SAMPLES = 32;
-static const float SSGI_INTENSITY = 0.2f;
+// Slightly boosted for the colored-room test scene so indirect color
+// bleeding is visible without changing the direct lighting contribution.
+static const float SSGI_INTENSITY = 0.3f;
 
 // 화면 공간에서 랜덤 방향 벡터 생성
 float3 GetRandomDirection(float2 uv, float3 normal)

@@ -40,7 +40,7 @@ cbuffer cbPass : register(b0)
     float4 gAmbientLight;
 
     Light gLights[MaxLights];
-    int gRenderMode;  // 0: Composite, 1: Lighting, 2: SSGI
+    int gRenderMode;  // 0: Composite, 1: Lighting, 2: SSGI, 3: Normal, 4: Depth
     float cbPerObjectPad3;
     float2 cbPerObjectPad4;
 };
@@ -167,9 +167,20 @@ float4 PS(VertexOut pin) : SV_Target
         // Lighting only
         litColor = ambient + directLight;
     }
-    else {
+    else if (gRenderMode == 2) {
         // SSGI only
         litColor = float4(2.0f * ssgiContribution, 1.0f);
+    }
+    else if (gRenderMode == 3) {
+        // Normal: the G-Buffer stores world normals in the 0..1 range.
+        litColor = float4(normalEncoded.rgb, 1.0f);
+    }
+    else {
+        // Depth: visualize linear view-space depth. Unwritten G-Buffer pixels
+        // have a zero position and remain black.
+        float viewDepth = mul(float4(posW, 1.0f), gView).z;
+        float depth = viewDepth > 0.0f ? saturate((viewDepth - gNearZ) / (gFarZ - gNearZ)) : 0.0f;
+        litColor = float4(depth, depth, depth, 1.0f);
     }
     
     litColor.a = albedo.a;
