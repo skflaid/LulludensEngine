@@ -67,6 +67,12 @@
     <Filter Include="헤더 파일\Renderer\Systems">
       <UniqueIdentifier>{7c736398-bbb6-4d22-8e74-c957b17b3189}</UniqueIdentifier>
     </Filter>
+    <Filter Include="소스 파일\Renderer\Passes">
+      <UniqueIdentifier>{80857600-69d9-40d1-bff7-c1b6b8a0c865}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Renderer\Passes">
+      <UniqueIdentifier>{8cbd8dd9-3dcc-4bd9-86b5-70a62ca8d037}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App\GameEngine.h">
@@ -186,6 +192,15 @@
     <ClInclude Include="..\Common\WICTextureLoader.h">
       <Filter>Common</Filter>
     </ClInclude>
+    <ClInclude Include="Core\TextureManager.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Passes\FunctionRenderPass.h">
+      <Filter>헤더 파일\Renderer\Passes</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Passes\IRenderPass.h">
+      <Filter>헤더 파일\Renderer\Passes</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="App\EditorUI.cpp">
@@ -256,6 +271,27 @@
     </ClCompile>
     <ClCompile Include="..\Common\WICTextureLoader.cpp">
       <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\TextureManager.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\imgui\imgui.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\imgui\imgui_draw.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\imgui\imgui_tables.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\imgui\imgui_widgets.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\imgui\backends\imgui_impl_dx12.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\External\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

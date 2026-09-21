@@ -27,6 +27,7 @@ cbuffer cbPass : register(b0)
 
     Light gLights[16];
     int   gRenderMode;
+    int   gEnableDenoise;
     float cbPerObjectPad3;
     float2 cbPerObjectPad4;
 };
@@ -148,6 +149,14 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     
     // 현재 픽셀의 SSGI 값 읽기 (SRV에서 읽기)
     float3 centerGI = gSSGIInput.Load(int3(texCoord, 0)).rgb;
+
+    // 비교용 bypass: 동일한 Denoise 패스와 resource barrier를 유지하면서
+    // 필터링 전 SSGI 결과를 그대로 출력한다.
+    if (gEnableDenoise == 0)
+    {
+        gSSGIOutput[dispatchThreadID.xy] = gSSGIInput.Load(int3(texCoord, 0));
+        return;
+    }
     
     // Bilateral Filter 적용 (엣지 보존 스무딩)
     float3 filteredSSGI = ApplyBilateralFilter(centerGI, posW, normalW, texCoord);

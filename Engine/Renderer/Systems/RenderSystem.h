@@ -4,6 +4,7 @@
 #include "Core/Entity.h"
 #include "Renderer/RendererCore.h"
 #include "RenderConstants.h"
+#include "Renderer/Passes/IRenderPass.h"
 #include <vector>
 #include <memory>
 #include <DirectXMath.h>
@@ -48,8 +49,13 @@ public:
     void ToggleRenderMode();
     void SetRenderMode(RenderMode mode) { m_RenderMode = mode; }
     RenderMode GetRenderMode() const { return m_RenderMode; }
+    void SetSSGIDenoiseEnabled(bool enabled) { m_EnableSSGIDenoise = enabled; }
+    bool IsSSGIDenoiseEnabled() const { return m_EnableSSGIDenoise; }
 
 private:
+    // 
+    void BuildRenderPasses();
+
     void RenderGBufferPass(UINT frameIndex);
     void RenderLightingPass(UINT frameIndex);
     void RenderSSGIPass(UINT frameIndex);
@@ -78,6 +84,9 @@ private:
     HWND m_Hwnd;
     uint32_t m_Width;
     uint32_t m_Height;
+
+    // Render Passes
+    std::vector<std::unique_ptr<IRenderPass>> m_RenderPasses;
 
     // Pipeline states for Deferred Rendering
     ComPtr<ID3D12RootSignature> m_GBufferRootSignature;
@@ -111,6 +120,7 @@ private:
     
     // Render mode
     RenderMode m_RenderMode = RenderMode::Composite;
+    bool m_EnableSSGIDenoise = true;
     
     // First frame flag for SSGI barrier
     bool m_IsFirstSSGIFrame = true;

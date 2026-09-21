@@ -57,6 +57,7 @@ struct PassConstants {
 
     PassLight gLights[16];
     int gRenderMode;
+    int gEnableDenoise;
     float cbPerObjectPad3;
     XMFLOAT2 cbPerObjectPad4;
 };

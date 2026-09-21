@@ -5,6 +5,7 @@
 #include "../Components/MeshComponent.h"
 #include "../Components/MaterialComponent.h"
 #include "../Common/d3dUtil.h"
+#include "../Passes/FunctionRenderPass.h"
 #include "Renderer/Components/CameraComponent.h"
 #include <d3dcompiler.h>
 #include "Renderer/Components/SkeletonComponent.h"
@@ -56,11 +57,71 @@ void RenderSystem::Initialize() {
     CreateSSGIPipelineState();
     CreateSSGIDenoisePipelineState();
 
+    BuildRenderPasses();
+
     m_EditorUI = std::make_unique<EditorUI>();
     if (!m_EditorUI->Initialize(m_Hwnd, m_RendererCore->GetDevice(), m_RendererCore->GetCommandQueue())) {
         m_EditorUI.reset();
         OutputDebugStringA("Failed to initialize Dear ImGui editor UI.\n");
     }
+}
+
+
+void RenderSystem::BuildRenderPasses()
+{
+    m_RenderPasses.clear();
+
+    auto addPass =
+        [this](
+            std::string name,
+            FunctionRenderPass::ExecuteFunction execute)
+        {
+            m_RenderPasses.push_back(
+                std::make_unique<FunctionRenderPass>(
+                    std::move(name),
+                    std::move(execute)));
+        };
+    
+    addPass("Shadow",
+        [this](const RenderPassContext& context)
+        {
+            RenderShadowPass(context.frameIndex);
+        });
+
+    addPass(
+        "GBuffer",
+        [this](const RenderPassContext& context)
+        {
+            RenderGBufferPass(context.frameIndex);
+        });
+
+    addPass(
+        "SSGI",
+        [this](const RenderPassContext& context)
+        {
+            RenderSSGIPass(context.frameIndex);
+        });
+
+    addPass(
+        "SSGI Denoise",
+        [this](const RenderPassContext& context)
+        {
+            RenderSSGIDenoisePass(context.frameIndex);
+        });
+
+    addPass(
+        "Copy SSGI History",
+        [this](const RenderPassContext& context)
+        {
+            CopySSGIToPrevious(context.frameIndex);
+        });
+
+    addPass(
+        "Lighting",
+        [this](const RenderPassContext& context)
+        {
+            RenderLightingPass(context.frameIndex);
+        });
 }
 
 void RenderSystem::InitializeTextures() {
@@ -922,22 +983,17 @@ void RenderSystem::Render() {
     UINT frameIndex = 0;
     UpdatePassConstants(frameIndex);
 
-    RenderShadowPass(frameIndex);
+    RenderPassContext context{};
+    context.frameIndex = frameIndex;
+    context.commandList = m_RendererCore->GetCommandList();
+    
+    for (const auto& pass : m_RenderPasses)
+    {
+        if (!pass)
+            continue;
 
-    // G-Buffer Pass
-    RenderGBufferPass(frameIndex);
-
-    // SSGI Pass (항상 실행)
-    RenderSSGIPass(frameIndex);
-
-    // SSGI Denoise Pass (SSGI 결과를 필터링)
-    RenderSSGIDenoisePass(frameIndex);
-
-    // 현재 SSGI 결과를 이전 프레임 텍스처로 복사 (Temporal Filter용)
-    CopySSGIToPrevious(frameIndex);
-
-    // Lighting Pass (모드에 따라 다른 결과 표시)
-    RenderLightingPass(frameIndex);
+        pass->Execute(context);
+    }
 
     if (m_EditorUI) {
         m_EditorUI->Render(m_Engine, m_RendererCore->GetCommandList(), m_DeltaTime);
@@ -1418,6 +1474,7 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     passConstants.gDeltaTime = 0.016f;
     passConstants.gAmbientLight = m_AmbientLight;
     passConstants.gRenderMode = static_cast<int>(m_RenderMode);
+    passConstants.gEnableDenoise = m_EnableSSGIDenoise ? 1 : 0;
     passConstants.cbPerObjectPad3 = 0.0f;
     passConstants.cbPerObjectPad4 = XMFLOAT2(0.0f, 0.0f);
     

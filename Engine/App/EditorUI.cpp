@@ -365,6 +365,13 @@ void EditorUI::DrawViewportOverlay(GameEngine* engine)
         ImGui::EndListBox();
     }
 
+    if (engine && engine->GetRenderSystem())
+    {
+        bool enableSSGIDenoise = engine->GetRenderSystem()->IsSSGIDenoiseEnabled();
+        if (ImGui::Checkbox("SSGI Denoise", &enableSSGIDenoise))
+            engine->GetRenderSystem()->SetSSGIDenoiseEnabled(enableSSGIDenoise);
+    }
+
     const ImVec2 toolbarBottomRight = ImGui::GetItemRectMax();
     const ImVec2 windowPos = ImGui::GetWindowPos();
     const ImVec2 windowSize = ImGui::GetWindowSize();
