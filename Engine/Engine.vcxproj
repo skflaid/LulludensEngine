@@ -155,6 +155,7 @@
     <ClInclude Include="Physics\PhysicsWorld.h" />
     <ClInclude Include="Physics\Systems\CollisionSystem.h" />
     <ClInclude Include="Physics\Systems\DynamicsSystem.h" />
+    <ClInclude Include="Renderer\Commands\CommandContext.h" />
     <ClInclude Include="Renderer\Components\CameraComponent.h" />
     <ClInclude Include="Renderer\Components\MaterialComponent.h" />
     <ClInclude Include="Renderer\Components\MeshComponent.h" />
@@ -162,14 +163,18 @@
     <ClInclude Include="Renderer\Components\SkeletonComponent.h" />
     <ClInclude Include="Renderer\Components\TransformAnimationComponent.h" />
     <ClInclude Include="Renderer\Components\TransformComponent.h" />
+    <ClInclude Include="Renderer\Graph\RenderResourceUsage.h" />
     <ClInclude Include="Renderer\Model.h" />
     <ClInclude Include="Renderer\Passes\FunctionRenderPass.h" />
     <ClInclude Include="Renderer\Passes\IRenderPass.h" />
     <ClInclude Include="Renderer\RendererCore.h" />
+    <ClInclude Include="Renderer\Resources\GpuResource.h" />
+    <ClInclude Include="Renderer\Resources\GpuTexture.h" />
     <ClInclude Include="Renderer\Systems\AnimationSystem.h" />
     <ClInclude Include="Renderer\Systems\CameraSystem.h" />
     <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
+    <ClInclude Include="RenderResourceUsage.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\Camera.cpp" />
@@ -191,6 +196,7 @@
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
     <ClCompile Include="Physics\Systems\DynamicsSystem.cpp" />
+    <ClCompile Include="Renderer\Commands\소스.cpp" />
     <ClCompile Include="Renderer\Components\MeshComponent.cpp" />
     <ClCompile Include="Renderer\RendererCore.cpp" />
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp" />

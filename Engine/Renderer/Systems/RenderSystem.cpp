@@ -74,15 +74,24 @@ void RenderSystem::BuildRenderPasses()
     auto addPass =
         [this](
             std::string name,
+            std::vector<ResourceUsage> resourceUsages,
             FunctionRenderPass::ExecuteFunction execute)
         {
             m_RenderPasses.push_back(
                 std::make_unique<FunctionRenderPass>(
                     std::move(name),
+                    std::move(resourceUsages),
                     std::move(execute)));
         };
     
-    addPass("Shadow",
+    addPass(
+        "Shadow",
+        {
+            {
+                RenderResource::ShadowMap,
+                RenderResourceUsage::DepthWrite
+            }
+        },
         [this](const RenderPassContext& context)
         {
             RenderShadowPass(context.frameIndex);
@@ -90,6 +99,28 @@ void RenderSystem::BuildRenderPasses()
 
     addPass(
         "GBuffer",
+        {
+            {
+                RenderResource::GBufferPosition,
+                RenderResourceUsage::RenderTarget
+            },
+            {
+                RenderResource::GBufferNormal,
+                RenderResourceUsage::RenderTarget
+            },
+            {
+                RenderResource::GBufferAlbedo,
+                RenderResourceUsage::RenderTarget
+            },
+            {
+                RenderResource::GBufferMaterial,
+                RenderResourceUsage::RenderTarget
+            },
+            {
+                RenderResource::SceneDepth,
+                RenderResourceUsage::DepthWrite
+            }
+        },
         [this](const RenderPassContext& context)
         {
             RenderGBufferPass(context.frameIndex);
@@ -97,6 +128,28 @@ void RenderSystem::BuildRenderPasses()
 
     addPass(
         "SSGI",
+        {
+            {
+                RenderResource::GBufferPosition,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::GBufferNormal,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::GBufferAlbedo,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::GBufferMaterial,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::SSGICurrent,
+                RenderResourceUsage::UnorderedAccess
+            }
+        },
         [this](const RenderPassContext& context)
         {
             RenderSSGIPass(context.frameIndex);
@@ -104,6 +157,28 @@ void RenderSystem::BuildRenderPasses()
 
     addPass(
         "SSGI Denoise",
+        {
+            {
+                RenderResource::GBufferPosition,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::GBufferNormal,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::SSGICurrent,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::SSGIPrevious,
+                RenderResourceUsage::ShaderReadCompute
+            },
+            {
+                RenderResource::SSGICurrent,
+                RenderResourceUsage::UnorderedAccess
+            }
+        },
         [this](const RenderPassContext& context)
         {
             RenderSSGIDenoisePass(context.frameIndex);
@@ -111,6 +186,16 @@ void RenderSystem::BuildRenderPasses()
 
     addPass(
         "Copy SSGI History",
+        {
+            {
+                RenderResource::SSGICurrent,
+                RenderResourceUsage::CopySource
+            },
+            {
+                RenderResource::SSGIPrevious,
+                RenderResourceUsage::CopyDestination
+            }
+        },
         [this](const RenderPassContext& context)
         {
             CopySSGIToPrevious(context.frameIndex);
@@ -118,6 +203,36 @@ void RenderSystem::BuildRenderPasses()
 
     addPass(
         "Lighting",
+        {
+            {
+                RenderResource::GBufferPosition,
+                RenderResourceUsage::ShaderReadPixel
+            },
+            {
+                RenderResource::GBufferNormal,
+                RenderResourceUsage::ShaderReadPixel
+            },
+            {
+                RenderResource::GBufferAlbedo,
+                RenderResourceUsage::ShaderReadPixel
+            },
+            {
+                RenderResource::GBufferMaterial,
+                RenderResourceUsage::ShaderReadPixel
+            },
+            {
+                RenderResource::SSGICurrent,
+                RenderResourceUsage::ShaderReadPixel
+            },
+            {
+                RenderResource::ShadowMap,
+                RenderResourceUsage::ShaderReadPixel
+            },
+            {
+                RenderResource::BackBuffer,
+                RenderResourceUsage::RenderTarget
+            }
+        },
         [this](const RenderPassContext& context)
         {
             RenderLightingPass(context.frameIndex);
@@ -734,13 +849,19 @@ void RenderSystem::CreateShadowResources() {
     heapProps.CreationNodeMask = 1;
     heapProps.VisibleNodeMask = 1;
 
+    ComPtr<ID3D12Resource> shadowResource;
+
     ThrowIfFailed(device->CreateCommittedResource(
         &heapProps,
         D3D12_HEAP_FLAG_NONE,
         &texDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,    // 나중에 DEPTH_WRITE ↔ GENERIC_READ 전환
+        D3D12_RESOURCE_STATE_GENERIC_READ,
         &optClear,
-        IID_PPV_ARGS(&m_ShadowMap)));
+        IID_PPV_ARGS(&shadowResource)));
+
+    m_ShadowMap.Initialize(
+        std::move(shadowResource),
+        D3D12_RESOURCE_STATE_GENERIC_READ);
 
     // DSV heap 1개짜리
     D3D12_DESCRIPTOR_HEAP_DESC dsvDesc = {};
@@ -1036,13 +1157,14 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
     commandList->RSSetScissorRects(1, &m_ShadowScissorRect);
 
     // Shadow map을 DEPTH_WRITE 상태로
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = m_ShadowMap.Get();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_GENERIC_READ;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    commandList->ResourceBarrier(1, &barrier);
+    auto& commandContext =
+        m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_ShadowMap,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+    commandContext.FlushResourceBarriers();
 
     // 깊이만 클리어
     commandList->ClearDepthStencilView(m_ShadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
@@ -1061,10 +1183,6 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
         }
     }
 
-    // 다시 샘플링용 상태로
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
-    commandList->ResourceBarrier(1, &barrier);
 }
 
 
@@ -1177,6 +1295,16 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
 void RenderSystem::RenderLightingPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
+
+    // 리소스 상태 전이
+    auto& commandContext =
+        m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_ShadowMap,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+    commandContext.FlushResourceBarriers();
 
     // Get back buffer resource (we need to access it through RendererCore)
     // For now, we'll get it from the RTV heap - but we need the actual resource

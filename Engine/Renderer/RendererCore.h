@@ -5,6 +5,8 @@
 #include <wrl/client.h>
 #include <memory>
 
+#include "Renderer/Commands/CommandContext.h"
+
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
@@ -27,6 +29,7 @@ public:
     ID3D12GraphicsCommandList* GetCommandList() const { return m_CommandList.Get(); }
     ID3D12CommandQueue* GetCommandQueue() const { return m_CommandQueue.Get(); }
     ID3D12CommandAllocator* GetCommandAllocator(UINT index) const { return m_CommandAllocators[index].Get(); }
+    CommandContext& GetCommandContext() noexcept { return m_CommandContext; }
 
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }
@@ -81,6 +84,7 @@ private:
     ComPtr<IDXGISwapChain3> m_SwapChain;
     ComPtr<ID3D12CommandAllocator> m_CommandAllocators[FrameCount];
     ComPtr<ID3D12GraphicsCommandList> m_CommandList;
+    CommandContext m_CommandContext;
 
     // Render targets
     ComPtr<ID3D12Resource> m_RenderTargets[FrameCount];

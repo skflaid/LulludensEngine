@@ -428,6 +428,9 @@ void RendererCore::BeginFrame() {
     m_CommandAllocators[m_FrameIndex]->Reset();
     m_CommandList->Reset(m_CommandAllocators[m_FrameIndex].Get(), nullptr);
 
+    m_CommandContext.Begin(
+        m_CommandList.Get());
+
     // Transition back buffer to render target state (for lighting pass)
     D3D12_RESOURCE_BARRIER barrier = {};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -453,6 +456,8 @@ void RendererCore::EndFrame() {
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 
     m_CommandList->ResourceBarrier(1, &barrier);
+
+    m_CommandContext.FlushResourceBarriers();
     m_CommandList->Close();
 
     // Execute command list

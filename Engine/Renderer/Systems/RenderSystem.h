@@ -4,6 +4,7 @@
 #include "Core/Entity.h"
 #include "Renderer/RendererCore.h"
 #include "RenderConstants.h"
+#include "Renderer/Resources/GpuTexture.h"
 #include "Renderer/Passes/IRenderPass.h"
 #include <vector>
 #include <memory>
@@ -102,7 +103,7 @@ private:
     ComPtr<ID3D12PipelineState> m_SSGIDenoisePipelineState;
 
     // Shadow map 리소스 + DSV
-    ComPtr<ID3D12Resource> m_ShadowMap;
+    GpuTexture m_ShadowMap;
     ComPtr<ID3D12DescriptorHeap> m_ShadowDsvHeap;
     D3D12_CPU_DESCRIPTOR_HANDLE m_ShadowDsv = {};
     UINT m_ShadowMapSize = 2048;
