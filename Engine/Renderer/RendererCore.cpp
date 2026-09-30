@@ -218,72 +218,68 @@ void RendererCore::CreateGBuffer() {
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_GBufferRTVHeap->GetCPUDescriptorHandleForHeapStart();
     D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_GBufferSRVHeap->GetCPUDescriptorHandleForHeapStart();
 
-    // Position Buffer (R32G32B32A32_FLOAT)
-    gbufferDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-    D3D12_CLEAR_VALUE clearValue = {};
-    clearValue.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-    clearValue.Color[0] = 0.0f;
-    clearValue.Color[1] = 0.0f;
-    clearValue.Color[2] = 0.0f;
-    clearValue.Color[3] = 0.0f;
-    m_Device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &gbufferDesc,
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        &clearValue,
-        IID_PPV_ARGS(&m_GBufferPosition)
-    );
-    m_Device->CreateRenderTargetView(m_GBufferPosition.Get(), nullptr, rtvHandle);
-    m_Device->CreateShaderResourceView(m_GBufferPosition.Get(), nullptr, srvHandle);
-    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
-    srvHandle.ptr += m_GBufferSRVDescriptorSize;
+    auto createGBufferTexture =
+        [&](GpuTexture& texture, DXGI_FORMAT format)
+        {
+            gbufferDesc.Format = format;
 
-    // Normal Buffer (R16G16B16A16_FLOAT)
-    gbufferDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    clearValue.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-    m_Device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &gbufferDesc,
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        &clearValue,
-        IID_PPV_ARGS(&m_GBufferNormal)
-    );
-    m_Device->CreateRenderTargetView(m_GBufferNormal.Get(), nullptr, rtvHandle);
-    m_Device->CreateShaderResourceView(m_GBufferNormal.Get(), nullptr, srvHandle);
-    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
-    srvHandle.ptr += m_GBufferSRVDescriptorSize;
+            D3D12_CLEAR_VALUE clearValue = {};
+            clearValue.Format = format;
+            clearValue.Color[0] = 0.0f;
+            clearValue.Color[1] = 0.0f;
+            clearValue.Color[2] = 0.0f;
+            clearValue.Color[3] = 0.0f;
 
-    // Albedo Buffer (R8G8B8A8_UNORM)
-    gbufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    clearValue.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    m_Device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &gbufferDesc,
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        &clearValue,
-        IID_PPV_ARGS(&m_GBufferAlbedo)
-    );
-    m_Device->CreateRenderTargetView(m_GBufferAlbedo.Get(), nullptr, rtvHandle);
-    m_Device->CreateShaderResourceView(m_GBufferAlbedo.Get(), nullptr, srvHandle);
-    rtvHandle.ptr += m_GBufferRTVDescriptorSize;
-    srvHandle.ptr += m_GBufferSRVDescriptorSize;
+            ComPtr<ID3D12Resource> resource;
 
-    // Material Buffer (R8G8B8A8_UNORM: Roughness, Metallic, etc.)
-    gbufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    clearValue.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    m_Device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &gbufferDesc,
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        &clearValue,
-        IID_PPV_ARGS(&m_GBufferMaterial)
-    );
-    m_Device->CreateRenderTargetView(m_GBufferMaterial.Get(), nullptr, rtvHandle);
-    m_Device->CreateShaderResourceView(m_GBufferMaterial.Get(), nullptr, srvHandle);
+            const HRESULT result =
+                m_Device->CreateCommittedResource(
+                    &heapProps,
+                    D3D12_HEAP_FLAG_NONE,
+                    &gbufferDesc,
+                    D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    &clearValue,
+                    IID_PPV_ARGS(&resource));
+
+            if (FAILED(result))
+            {
+                throw std::runtime_error(
+                    "Failed to create G-Buffer texture.");
+            }
+
+            texture.Initialize(
+                std::move(resource),
+                D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+            m_Device->CreateRenderTargetView(
+                texture.Get(),
+                nullptr,
+                rtvHandle);
+
+            m_Device->CreateShaderResourceView(
+                texture.Get(),
+                nullptr,
+                srvHandle);
+
+            rtvHandle.ptr += m_GBufferRTVDescriptorSize;
+            srvHandle.ptr += m_GBufferSRVDescriptorSize;
+        };
+
+    createGBufferTexture(
+        m_GBufferPosition,
+        DXGI_FORMAT_R32G32B32A32_FLOAT);
+
+    createGBufferTexture(
+        m_GBufferNormal,
+        DXGI_FORMAT_R16G16B16A16_FLOAT);
+
+    createGBufferTexture(
+        m_GBufferAlbedo,
+        DXGI_FORMAT_R8G8B8A8_UNORM);
+
+    createGBufferTexture(
+        m_GBufferMaterial,
+        DXGI_FORMAT_R8G8B8A8_UNORM);
 }
 
 void RendererCore::CreateSSGIBuffer() {

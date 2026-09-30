@@ -125,8 +125,8 @@ private:
     
     // First frame flag for SSGI barrier
     bool m_IsFirstSSGIFrame = true;
-    // First frame flag for G-Buffer barrier
-    bool m_IsFirstGBufferFrame = true;
+    // First frame flag for G-Buffer barrier 삭제
+    // bool m_IsFirstGBufferFrame = true;
 
     // Constant buffers
     static const int FrameCount = 2;

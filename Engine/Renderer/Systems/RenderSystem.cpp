@@ -1208,31 +1208,26 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     commandList->RSSetViewports(1, &mainViewport);
     commandList->RSSetScissorRects(1, &mainScissor);
 
-    // Transition G-Buffer to render target state
-    // barrier 배열을 항상 초기화 (나중에 다시 사용하기 위해)
-    D3D12_RESOURCE_BARRIER barriers[4] = {};
-    barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
-    barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[1].Transition.pResource = m_RendererCore->GetGBufferNormal();
-    barriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[2].Transition.pResource = m_RendererCore->GetGBufferAlbedo();
-    barriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[3].Transition.pResource = m_RendererCore->GetGBufferMaterial();
-    
-    // 첫 프레임에서는 G-Buffer가 이미 RENDER_TARGET 상태로 시작
-    if (!m_IsFirstGBufferFrame) {
-        barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        barriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        commandList->ResourceBarrier(4, barriers);
-    }
-    m_IsFirstGBufferFrame = false;
+    auto& commandContext =
+        m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferPositionTexture(),
+        D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferNormalTexture(),
+        D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferAlbedoTexture(),
+        D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferMaterialTexture(),
+        D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+    commandContext.FlushResourceBarriers();
 
     // Set G-Buffer render targets
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs[4] = {
@@ -1266,30 +1261,6 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
             objectIndex++;
         }
     }
-
-    // Transition G-Buffer to pixel shader resource state
-    // barrier 배열 재초기화 (안전하게)
-    barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[0].Transition.pResource = m_RendererCore->GetGBufferPosition();
-    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    
-    barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[1].Transition.pResource = m_RendererCore->GetGBufferNormal();
-    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    
-    barriers[2].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[2].Transition.pResource = m_RendererCore->GetGBufferAlbedo();
-    barriers[2].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barriers[2].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    
-    barriers[3].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[3].Transition.pResource = m_RendererCore->GetGBufferMaterial();
-    barriers[3].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    barriers[3].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    
-    commandList->ResourceBarrier(4, barriers);
 }
 
 void RenderSystem::RenderLightingPass(UINT frameIndex) {
@@ -1299,6 +1270,22 @@ void RenderSystem::RenderLightingPass(UINT frameIndex) {
     // 리소스 상태 전이
     auto& commandContext =
         m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferPositionTexture(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferNormalTexture(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferAlbedoTexture(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferMaterialTexture(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     commandContext.TransitionResource(
         m_ShadowMap,
@@ -1365,7 +1352,29 @@ void RenderSystem::ToggleRenderMode() {
 
 void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
-    auto device = m_RendererCore->GetDevice();
+    auto device = m_RendererCore->GetDevice();;
+
+    // G-Buffer Resource Transition
+    auto& commandContext =
+        m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferPositionTexture(),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferNormalTexture(),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferAlbedoTexture(),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetGBufferMaterialTexture(),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    commandContext.FlushResourceBarriers();
 
     // Transition SSGI buffer to unordered access state
     // 첫 프레임에서는 이미 UNORDERED_ACCESS 상태이므로 barrier를 건너뜀

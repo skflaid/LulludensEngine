@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "Renderer/Commands/CommandContext.h"
+#include "Resources/GpuTexture.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -48,6 +49,26 @@ public:
     uint32_t GetGBufferSRVDescriptorSize() const { return m_GBufferSRVDescriptorSize; }
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferRTVHandle(int index) const;
     D3D12_CPU_DESCRIPTOR_HANDLE GetGBufferSRVHandle(int index) const;
+
+    GpuTexture& GetGBufferPositionTexture() noexcept
+    {
+        return m_GBufferPosition;
+    }
+
+    GpuTexture& GetGBufferNormalTexture() noexcept
+    {
+        return m_GBufferNormal;
+    }
+
+    GpuTexture& GetGBufferAlbedoTexture() noexcept
+    {
+        return m_GBufferAlbedo;
+    }
+
+    GpuTexture& GetGBufferMaterialTexture() noexcept
+    {
+        return m_GBufferMaterial;
+    }
 
     // SSGI access
     ID3D12Resource* GetSSGIBuffer() const { return m_SSGIBuffer.Get(); }
@@ -96,10 +117,10 @@ private:
     ComPtr<ID3D12DescriptorHeap> m_DSVHeap;
 
     // G-Buffer
-    ComPtr<ID3D12Resource> m_GBufferPosition;
-    ComPtr<ID3D12Resource> m_GBufferNormal;
-    ComPtr<ID3D12Resource> m_GBufferAlbedo;
-    ComPtr<ID3D12Resource> m_GBufferMaterial;
+    GpuTexture m_GBufferPosition;
+    GpuTexture m_GBufferNormal;
+    GpuTexture m_GBufferAlbedo;
+    GpuTexture m_GBufferMaterial;
     ComPtr<ID3D12DescriptorHeap> m_GBufferRTVHeap;
     ComPtr<ID3D12DescriptorHeap> m_GBufferSRVHeap;
     uint32_t m_GBufferRTVDescriptorSize;
