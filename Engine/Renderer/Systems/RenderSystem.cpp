@@ -20,6 +20,7 @@ RenderSystem::RenderSystem(GameEngine* engine, HWND hwnd, uint32_t width, uint32
         m_ObjectConstantBufferDataBegin[i] = nullptr;
         m_MaterialConstantBufferDataBegin[i] = nullptr;
         m_PassConstantBufferDataBegin[i] = nullptr;
+        m_SSGITemporalConstantBufferDataBegin[i] = nullptr;
     }
 }
 
@@ -45,6 +46,14 @@ void RenderSystem::Initialize() {
     float aspectRatio = static_cast<float>(m_Width) / static_cast<float>(m_Height);
     XMStoreFloat4x4(&m_ProjMatrix, XMMatrixPerspectiveFovLH(fov, aspectRatio, 0.1f, 100.0f));
     */
+
+    XMStoreFloat4x4(
+        &m_CurrentViewProjection,
+        XMMatrixIdentity());
+
+    XMStoreFloat4x4(
+        &m_PreviousViewProjection,
+        XMMatrixIdentity());
 
     CreateConstantBuffer();
     CreateShadowResources();
@@ -280,6 +289,7 @@ void RenderSystem::CreateConstantBuffer() {
     m_MaterialConstantBufferSize = (sizeof(RenderMaterialConstants) + 255) & ~255;
     m_PassConstantBufferSize = (sizeof(PassConstants) + 255) & ~255;
     m_SkinningConstantBufferSize = (sizeof(SkinningConstants) + 255) & ~255;
+    m_SSGITemporalConstantBufferSize = (sizeof(SSGITemporalConstants) + 255) & ~255;
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -334,6 +344,25 @@ void RenderSystem::CreateConstantBuffer() {
         );
         m_PassConstantBuffers[i]->Map(0, &readRange, reinterpret_cast<void**>(&m_PassConstantBufferDataBegin[i]));
 
+        resourceDesc.Width =
+            m_SSGITemporalConstantBufferSize;
+
+        ThrowIfFailed(
+            device->CreateCommittedResource(
+                &heapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &resourceDesc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                nullptr,
+                IID_PPV_ARGS(
+                    &m_SSGITemporalConstantBuffers[i])));
+
+        m_SSGITemporalConstantBuffers[i]->Map(
+            0,
+            &readRange,
+            reinterpret_cast<void**>(
+                &m_SSGITemporalConstantBufferDataBegin[i]));
+
         resourceDesc.Width = m_SkinningConstantBufferSize;
         device->CreateCommittedResource(
             &heapProps,
@@ -345,6 +374,8 @@ void RenderSystem::CreateConstantBuffer() {
         );
         m_SkinningConstantBuffers[i]->Map(0, &readRange,
             reinterpret_cast<void**>(&m_SkinningConstantBufferDataBegin[i]));
+
+
     }
 }
 
@@ -754,36 +785,41 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
     uavTable[0].RegisterSpace = 0;
     uavTable[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParameters[6] = {};
+    D3D12_ROOT_PARAMETER rootParameters[7] = {};
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[0].Descriptor.ShaderRegister = 0;
     rootParameters[0].Descriptor.RegisterSpace = 0;
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
-    rootParameters[1].DescriptorTable.pDescriptorRanges = srvTable0;  // Position
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[1].Descriptor.ShaderRegister = 1;
+    rootParameters[1].Descriptor.RegisterSpace = 0;
     rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
-    rootParameters[2].DescriptorTable.pDescriptorRanges = srvTable1;  // Normal
+    rootParameters[2].DescriptorTable.pDescriptorRanges = srvTable0;  // Position
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[3].DescriptorTable.NumDescriptorRanges = 1;
-    rootParameters[3].DescriptorTable.pDescriptorRanges = srvTable2;  // SSGI Input SRV
+    rootParameters[3].DescriptorTable.pDescriptorRanges = srvTable1;  // Normal
     rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[4].DescriptorTable.NumDescriptorRanges = 1;
-    rootParameters[4].DescriptorTable.pDescriptorRanges = srvTable3;  // SSGI Previous SRV
+    rootParameters[4].DescriptorTable.pDescriptorRanges = srvTable2;  // SSGI Input SRV
     rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParameters[5].DescriptorTable.NumDescriptorRanges = 1;
-    rootParameters[5].DescriptorTable.pDescriptorRanges = uavTable;  // SSGI Output UAV
+    rootParameters[5].DescriptorTable.pDescriptorRanges = srvTable3;  // SSGI Previous SRV
     rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[6].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[6].DescriptorTable.pDescriptorRanges = uavTable;  // SSGI Output UAV
+    rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
@@ -801,7 +837,7 @@ void RenderSystem::CreateSSGIDenoisePipelineState() {
     samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
-    rootDesc.NumParameters = 6;  // CBV(0) + Position SRV(1) + Normal SRV(2) + SSGI Input SRV(3) + SSGI Previous SRV(4) + SSGI Output UAV(5)
+    rootDesc.NumParameters = _countof(rootParameters); 
     rootDesc.pParameters = rootParameters;
     rootDesc.NumStaticSamplers = 1;
     rootDesc.pStaticSamplers = &samplerDesc;
@@ -1042,6 +1078,15 @@ void RenderSystem::Shutdown() {
             m_PassConstantBuffers[i]->Unmap(0, nullptr);
             m_PassConstantBufferDataBegin[i] = nullptr;
         }
+        if (m_SSGITemporalConstantBuffers[i])
+        {
+            m_SSGITemporalConstantBuffers[i]->Unmap(
+                0,
+                nullptr);
+
+            m_SSGITemporalConstantBufferDataBegin[i] =
+                nullptr;
+        }
     }
 
     if (m_RendererCore) {
@@ -1104,7 +1149,7 @@ void RenderSystem::UnregisterEntity(Entity* entity) {
 void RenderSystem::Render() {
     m_RendererCore->BeginFrame();
 
-    UINT frameIndex = 0;
+    UINT frameIndex = m_RendererCore->GetFrameIndex();
     UpdatePassConstants(frameIndex);
 
     RenderPassContext context{};
@@ -1453,6 +1498,15 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = m_PassConstantBuffers[frameIndex]->GetGPUVirtualAddress();
     commandList->SetComputeRootConstantBufferView(0, passCBAddress);
 
+    const D3D12_GPU_VIRTUAL_ADDRESS
+        temporalCBAddress =
+        m_SSGITemporalConstantBuffers[frameIndex]
+        ->GetGPUVirtualAddress();
+
+    commandList->SetComputeRootConstantBufferView(
+        1,
+        temporalCBAddress);
+
     // Set descriptor heap (G-Buffer SRV Heap에 모든 descriptor가 포함되어 있음)
     ID3D12DescriptorHeap* heaps[] = { m_RendererCore->GetGBufferSRVHeap() };
     commandList->SetDescriptorHeaps(1, heaps);
@@ -1461,19 +1515,19 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
     
     // Position (index 0)
-    commandList->SetComputeRootDescriptorTable(1, srvHandle);
+    commandList->SetComputeRootDescriptorTable(2, srvHandle);
     
     // Normal (index 1)
     D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = srvHandle;
     normalHandle.ptr += m_RendererCore->GetGBufferSRVDescriptorSize();
-    commandList->SetComputeRootDescriptorTable(2, normalHandle);
+    commandList->SetComputeRootDescriptorTable(3, normalHandle);
     
     const auto rawSRV =
         m_RendererCore->
         GetSSGIRawSRVHandleFromGBufferHeap();
 
     commandList->SetComputeRootDescriptorTable(
-        3,
+        4,
         rawSRV);
 
     const auto previousSRV =
@@ -1481,7 +1535,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
         GetSSGIPreviousSRVHandleFromGBufferHeap();
 
     commandList->SetComputeRootDescriptorTable(
-        4,
+        5,
         previousSRV);
 
     const auto filteredUAV =
@@ -1489,7 +1543,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
         GetSSGIFilteredUAVHandleFromGBufferHeap();
 
     commandList->SetComputeRootDescriptorTable(
-        5,
+        6,
         filteredUAV);
 
     // Dispatch compute shader (8x8 thread groups)
@@ -1520,6 +1574,8 @@ void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
     commandList->CopyResource(
         m_RendererCore->GetSSGIPrevious(),
         m_RendererCore->GetSSGIFiltered());
+
+    CommitSSGIHistory();
 }
 
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {
@@ -1663,6 +1719,69 @@ void RenderSystem::UpdatePassConstants(UINT frameIndex) {
     memcpy(m_PassConstantBufferDataBegin[frameIndex], &passConstants, sizeof(PassConstants));
 }
 
+void RenderSystem::UpdateSSGITemporalConstants(
+    UINT frameIndex)
+{
+    Entity* mainCamera =
+        m_Engine->GetMainCamera();
+
+    if (!mainCamera)
+        return;
+
+    auto* camera =
+        mainCamera->GetComponent<CameraComponent>();
+
+    if (!camera)
+        return;
+
+    const XMMATRIX view =
+        XMLoadFloat4x4(&camera->ViewMatrix);
+
+    const XMMATRIX projection =
+        XMLoadFloat4x4(&camera->ProjMatrix);
+
+    const XMMATRIX currentViewProjection =
+        XMMatrixMultiply(view, projection);
+
+    // 현재 프레임 행렬은 History 복사가 끝난 뒤
+    // Previous 행렬로 승격하기 위해 보관한다.
+    XMStoreFloat4x4(
+        &m_CurrentViewProjection,
+        currentViewProjection);
+
+    SSGITemporalConstants constants{};
+
+    const XMMATRIX previousViewProjection =
+        XMLoadFloat4x4(
+            &m_PreviousViewProjection);
+
+    XMStoreFloat4x4(
+        &constants.gPreviousViewProjection,
+        XMMatrixTranspose(
+            previousViewProjection));
+
+    constants.gTemporalRenderTargetSize =
+        XMFLOAT2(
+            static_cast<float>(m_Width),
+            static_cast<float>(m_Height));
+
+    constants.gTemporalInvRenderTargetSize =
+        XMFLOAT2(
+            1.0f / static_cast<float>(m_Width),
+            1.0f / static_cast<float>(m_Height));
+
+    constants.gHistoryValid =
+        m_SSGIHistoryValid ? 1u : 0u;
+
+    constants.gHistoryWeight = 0.8f;
+    constants.gTemporalPadding = XMFLOAT2(0.0f, 0.0f);
+
+    memcpy(
+        m_SSGITemporalConstantBufferDataBegin[frameIndex],
+        &constants,
+        sizeof(constants));
+}
+
 void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex) {
     auto transform = entity->GetComponent<TransformComponent>();
     auto mesh = entity->GetComponent<MeshComponent>();
@@ -1784,4 +1903,17 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);
     commandList->IASetIndexBuffer(&mesh->indexBufferView);
     commandList->DrawIndexedInstanced(static_cast<UINT>(mesh->indices.size()), 1, 0, 0, 0);
+}
+
+void RenderSystem::InvalidateSSGIHistory()
+{
+    m_SSGIHistoryValid = false;
+}
+
+void RenderSystem::CommitSSGIHistory()
+{
+    m_PreviousViewProjection =
+        m_CurrentViewProjection;
+
+    m_SSGIHistoryValid = true;
 }

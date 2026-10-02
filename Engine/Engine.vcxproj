@@ -174,7 +174,6 @@
     <ClInclude Include="Renderer\Systems\CameraSystem.h" />
     <ClInclude Include="Renderer\Systems\RenderConstants.h" />
     <ClInclude Include="Renderer\Systems\RenderSystem.h" />
-    <ClInclude Include="RenderResourceUsage.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\Camera.cpp" />

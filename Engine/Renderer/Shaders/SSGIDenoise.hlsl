@@ -32,6 +32,18 @@ cbuffer cbPass : register(b0)
     float2 cbPerObjectPad4;
 };
 
+cbuffer cbSSGITemporal : register(b1)
+{
+    float4x4 gPreviousViewProjection;
+
+    float2 gTemporalRenderTargetSize;
+    float2 gTemporalInvRenderTargetSize;
+
+    uint gHistoryValid;
+    float gHistoryWeight;
+    float2 gTemporalPadding;
+}
+
 // G-Buffer textures (깊이, 노말 정보용)
 Texture2D gPositionMap : register(t0);
 Texture2D gNormalMap   : register(t1);
@@ -162,7 +174,65 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 filteredSSGI = ApplyBilateralFilter(centerGI, posW, normalW, texCoord);
     
     // Temporal Filter: 이전 프레임 결과와 현재 결과를 lerp (고스팅 방지 포함)
-    float3 previousSSGI = gSSGIPrevious.Load(int3(texCoord, 0)).rgb;
+    // 첫 프레임이거나 History가 무효라면 현재 결과만 사용한다.
+    if (gHistoryValid == 0)
+    {
+        gSSGIOutput[dispatchThreadID.xy] = float4(filteredSSGI, 1.0f);
+
+        return;
+    }
+
+// 현재 월드 위치를 이전 프레임 카메라로 투영한다.
+    float4 previousClip =
+    mul(
+        float4(posW, 1.0f),
+        gPreviousViewProjection);
+
+// 이전 카메라의 뒤쪽에 있으면 History를 사용할 수 없다.
+    if (previousClip.w <= 0.00001f)
+    {
+        gSSGIOutput[dispatchThreadID.xy] =
+        float4(filteredSSGI, 1.0f);
+
+        return;
+    }
+
+    float2 previousNDC =
+    previousClip.xy / previousClip.w;
+
+// DirectX NDC → Texture UV.
+// 화면 Texture의 Y축은 아래 방향이므로 Y를 뒤집는다.
+    float2 previousUV;
+
+    previousUV.x =
+    previousNDC.x * 0.5f + 0.5f;
+
+    previousUV.y =
+    -previousNDC.y * 0.5f + 0.5f;
+
+// 이전 화면 바깥으로 나간 픽셀은 새로 드러난 영역이다.
+    if (any(previousUV < 0.0f) ||
+    any(previousUV > 1.0f))
+    {
+        gSSGIOutput[dispatchThreadID.xy] =
+        float4(filteredSSGI, 1.0f);
+
+        return;
+    }
+
+    int2 previousCoord =
+    int2(
+        previousUV *
+        gTemporalRenderTargetSize);
+
+    previousCoord = clamp(
+    previousCoord,
+    int2(0, 0),
+    int2(gTemporalRenderTargetSize) - 1);
+
+    float3 previousSSGI =
+    gSSGIPrevious.Load(
+        int3(previousCoord, 0)).rgb;
     
     // 1. 히스토리 거부 (History Rejection): 이전 프레임과 현재 프레임의 차이가 크면 거부
     float3 diff = abs(previousSSGI - filteredSSGI);
@@ -172,11 +242,11 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     // 2. 클램핑 (Clamping): 이전 프레임 값을 현재 값 주변으로 제한
     float3 clampMin = filteredSSGI * (1.0f - TEMPORAL_CLAMP_SCALE);
     float3 clampMax = filteredSSGI * (1.0f + TEMPORAL_CLAMP_SCALE);
-    float3 clampedPrevious = clamp(previousSSGI, clampMin, clampMax);
+    float3 clampedHistory = clamp(previousSSGI, clampMin, clampMax);
     
     // 3. 거부 인자가 낮으면 (차이가 크면) Temporal Filter 비활성화
-    float blendFactor = lerp(1.0f, TEMPORAL_BLEND_FACTOR, rejectionFactor);
-    float3 temporalFilteredSSGI = lerp(clampedPrevious, filteredSSGI, blendFactor);
+    float historyWeight = gHistoryWeight * rejectionFactor;
+    float3 temporalFilteredSSGI = lerp(filteredSSGI, clampedHistory, historyWeight);
     
     // 결과 출력 (Temporal Filter 적용된 결과를 UAV에 쓰기)
     gSSGIOutput[dispatchThreadID.xy] = float4(temporalFilteredSSGI, 1.0f);

@@ -64,6 +64,9 @@ private:
     void CopySSGIToPrevious(UINT frameIndex);
     void RenderEntity(Entity* entity, UINT frameIndex, int objectIndex);
     void UpdatePassConstants(UINT frameIndex);
+    void UpdateSSGITemporalConstants(UINT frameIndex);
+    void InvalidateSSGIHistory();
+    void CommitSSGIHistory();
 
     void RenderShadowPass(UINT frameIndex);
     void CreateShadowPipelineState();
@@ -150,4 +153,14 @@ private:
     UINT m_SkinningConstantBufferSize = 0;
     ComPtr<ID3D12Resource> m_SkinningConstantBuffers[FrameCount];
     BYTE* m_SkinningConstantBufferDataBegin[FrameCount]{};
+
+    // SSGI
+    ComPtr<ID3D12Resource> m_SSGITemporalConstantBuffers[FrameCount];
+    UINT8* m_SSGITemporalConstantBufferDataBegin[FrameCount];
+    UINT m_SSGITemporalConstantBufferSize = 0;
+
+    XMFLOAT4X4 m_CurrentViewProjection{};
+    XMFLOAT4X4 m_PreviousViewProjection{};
+
+    bool m_SSGIHistoryValid = false;
 };

@@ -1,5 +1,6 @@
 #pragma once
 #include <DirectXMath.h>
+#include <cstdint>
 
 using namespace DirectX;
 
@@ -9,6 +10,17 @@ using namespace DirectX;
 
 struct SkinningConstants {
     XMFLOAT4X4 BoneTransforms[128]; // HLSL과 동일 크기
+};
+
+struct SSGITemporalConstants {
+    XMFLOAT4X4 gPreviousViewProjection;
+
+    XMFLOAT2 gTemporalRenderTargetSize;
+    XMFLOAT2 gTemporalInvRenderTargetSize;
+
+    uint32_t gHistoryValid;
+    float gHistoryWeight;
+    XMFLOAT2 gTemporalPadding;
 };
 
 struct ObjectConstants {
