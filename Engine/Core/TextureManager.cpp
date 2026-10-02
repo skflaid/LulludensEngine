@@ -21,21 +21,25 @@ TextureManager* TextureManager::Get() {
     return s_Instance.get();
 }
 
-void TextureManager::SetSRVHeap(ID3D12DescriptorHeap* srvHeap, UINT descriptorSize) {
+void TextureManager::SetSRVHeap(ID3D12DescriptorHeap* srvHeap, UINT descriptorSize, UINT firstSRVIndex) {
     m_SRVHeap = srvHeap;
     m_SRVDescriptorSize = descriptorSize;
+    m_FirstSRVIndex = firstSRVIndex;
     m_NextSRVIndex = 0;
-}
+ }
 
 D3D12_CPU_DESCRIPTOR_HANDLE TextureManager::AllocateSRVHandle() {
     if (!m_SRVHeap || m_NextSRVIndex >= MAX_TEXTURES) {
         return {};
     }
     
-    // GBuffer SRV 힙의 인덱스 8부터 시작 (0-7은 G-Buffer, SSGI, Shadow용)
-    const UINT TEXTURE_START_INDEX = 8;
-    D3D12_CPU_DESCRIPTOR_HANDLE handle = m_SRVHeap->GetCPUDescriptorHandleForHeapStart();
-    handle.ptr += (TEXTURE_START_INDEX + m_NextSRVIndex) * m_SRVDescriptorSize;
+    D3D12_CPU_DESCRIPTOR_HANDLE handle =
+        m_SRVHeap->GetCPUDescriptorHandleForHeapStart();
+
+    handle.ptr +=
+        (m_FirstSRVIndex + m_NextSRVIndex) *
+        m_SRVDescriptorSize;
+
     m_NextSRVIndex++;
     
     return handle;

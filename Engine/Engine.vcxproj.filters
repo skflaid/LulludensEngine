@@ -311,7 +311,7 @@
     <ClCompile Include="..\External\imgui\backends\imgui_impl_win32.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Renderer\Commands\소스.cpp">
+    <ClCompile Include="Renderer\Commands\CommandContext.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

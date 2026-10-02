@@ -29,7 +29,7 @@ public:
     bool LoadAllDDSFromDirectory(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     
     // SRV 힙 설정 (텍스처 SRV를 저장할 힙)
-    void SetSRVHeap(ID3D12DescriptorHeap* srvHeap, UINT descriptorSize);
+    void SetSRVHeap(ID3D12DescriptorHeap* srvHeap, UINT descriptorSize, UINT firstSRVIndex);
     
     // SRV 핸들 할당 (다음 사용 가능한 SRV 핸들 반환)
     D3D12_CPU_DESCRIPTOR_HANDLE AllocateSRVHandle();
@@ -43,6 +43,7 @@ private:
     ID3D12DescriptorHeap* m_SRVHeap = nullptr;
     UINT m_SRVDescriptorSize = 0;
     UINT m_NextSRVIndex = 0;
+    UINT m_FirstSRVIndex = 0;
     static const UINT MAX_TEXTURES = 256; // 최대 텍스처 개수
 };
 

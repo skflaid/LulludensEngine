@@ -146,7 +146,7 @@ void RenderSystem::BuildRenderPasses()
                 RenderResourceUsage::ShaderReadCompute
             },
             {
-                RenderResource::SSGICurrent,
+                RenderResource::SSGIRaw,
                 RenderResourceUsage::UnorderedAccess
             }
         },
@@ -167,7 +167,7 @@ void RenderSystem::BuildRenderPasses()
                 RenderResourceUsage::ShaderReadCompute
             },
             {
-                RenderResource::SSGICurrent,
+                RenderResource::SSGIRaw,
                 RenderResourceUsage::ShaderReadCompute
             },
             {
@@ -175,7 +175,7 @@ void RenderSystem::BuildRenderPasses()
                 RenderResourceUsage::ShaderReadCompute
             },
             {
-                RenderResource::SSGICurrent,
+                RenderResource::SSGIFiltered,
                 RenderResourceUsage::UnorderedAccess
             }
         },
@@ -188,7 +188,7 @@ void RenderSystem::BuildRenderPasses()
         "Copy SSGI History",
         {
             {
-                RenderResource::SSGICurrent,
+                RenderResource::SSGIFiltered,
                 RenderResourceUsage::CopySource
             },
             {
@@ -221,7 +221,7 @@ void RenderSystem::BuildRenderPasses()
                 RenderResourceUsage::ShaderReadPixel
             },
             {
-                RenderResource::SSGICurrent,
+                RenderResource::SSGIFiltered,
                 RenderResourceUsage::ShaderReadPixel
             },
             {
@@ -242,7 +242,10 @@ void RenderSystem::BuildRenderPasses()
 void RenderSystem::InitializeTextures() {
     // TextureManager 초기화
     auto textureManager = TextureManager::Get();
-    textureManager->SetSRVHeap(m_RendererCore->GetGBufferSRVHeap(), m_RendererCore->GetGBufferSRVDescriptorSize());
+    textureManager->SetSRVHeap(
+        m_RendererCore->GetGBufferSRVHeap(),
+        m_RendererCore->GetGBufferSRVDescriptorSize(),
+        m_RendererCore->GetTextureSRVStartIndex());
     
     // 모든 DDS 텍스처 로드
     auto device = m_RendererCore->GetDevice();
@@ -1288,6 +1291,10 @@ void RenderSystem::RenderLightingPass(UINT frameIndex) {
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     commandContext.TransitionResource(
+        m_RendererCore->GetSSGIFilteredTexture(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
         m_ShadowMap,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
@@ -1374,19 +1381,11 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
         m_RendererCore->GetGBufferMaterialTexture(),
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-    commandContext.FlushResourceBarriers();
+    commandContext.TransitionResource(
+        m_RendererCore->GetSSGIRawTexture(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    // Transition SSGI buffer to unordered access state
-    // 첫 프레임에서는 이미 UNORDERED_ACCESS 상태이므로 barrier를 건너뜀
-    D3D12_RESOURCE_BARRIER barrier = {};
-    if (!m_IsFirstSSGIFrame) {
-        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
-        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        commandList->ResourceBarrier(1, &barrier);
-    }
+    commandContext.FlushResourceBarriers();
 
     // Set pipeline state
     commandList->SetPipelineState(m_SSGIPipelineState.Get());
@@ -1405,8 +1404,13 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     commandList->SetComputeRootDescriptorTable(1, srvHandle);
 
     // Set SSGI UAV (G-Buffer SRV Heap에서 가져옴)
-    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
-    commandList->SetComputeRootDescriptorTable(2, uavHandle);
+    const D3D12_GPU_DESCRIPTOR_HANDLE uavHandle =
+        m_RendererCore->
+        GetSSGIRawUAVHandleFromGBufferHeap();
+
+    commandList->SetComputeRootDescriptorTable(
+        2,
+        uavHandle);
 
     // Dispatch compute shader (8x8 thread groups)
     uint32_t width = m_RendererCore->GetWidth();
@@ -1417,22 +1421,29 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
 
     // SSGI 버퍼는 UNORDERED_ACCESS 상태로 유지
     // Denoise 패스에서 SRV로 읽기 위해 상태 전환할 예정
-    
-    // 첫 프레임 플래그 해제
-    m_IsFirstSSGIFrame = false;
+
 }
 
 void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
 
-    D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = m_RendererCore->GetSSGIBuffer();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // SSGI 패스에서 UAV로 출력한 상태
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;  // Denoise에서 SRV로 읽기
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    commandList->ResourceBarrier(1, &barrier);
+    auto& commandContext =
+        m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetSSGIRawTexture(),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetSSGIFilteredTexture(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetSSGIPreviousTexture(),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    commandContext.FlushResourceBarriers();
 
     // Set pipeline state
     commandList->SetPipelineState(m_SSGIDenoisePipelineState.Get());
@@ -1457,22 +1468,29 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     normalHandle.ptr += m_RendererCore->GetGBufferSRVDescriptorSize();
     commandList->SetComputeRootDescriptorTable(2, normalHandle);
     
-    // Set SSGI Input SRV (G-Buffer SRV Heap의 4번째 슬롯)
-    D3D12_GPU_DESCRIPTOR_HANDLE ssgiSrvHandle = m_RendererCore->GetSSGISRVHandleFromGBufferHeap();
-    commandList->SetComputeRootDescriptorTable(3, ssgiSrvHandle);
-    
-    // Set SSGI Previous SRV (G-Buffer SRV Heap의 7번째 슬롯)
-    D3D12_GPU_DESCRIPTOR_HANDLE ssgiPreviousSrvHandle = m_RendererCore->GetSSGIPreviousSRVHandleFromGBufferHeap();
-    commandList->SetComputeRootDescriptorTable(4, ssgiPreviousSrvHandle);
-    
-    // Set SSGI Output UAV (G-Buffer SRV Heap의 6번째 슬롯)
-    D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = m_RendererCore->GetSSGIUAVHandleFromGBufferHeap();
-    commandList->SetComputeRootDescriptorTable(5, uavHandle);
+    const auto rawSRV =
+        m_RendererCore->
+        GetSSGIRawSRVHandleFromGBufferHeap();
 
-    // SSGI 버퍼를 UAV로 쓰기 위해 상태 전환
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;  // Denoise 출력용
-    commandList->ResourceBarrier(1, &barrier);
+    commandList->SetComputeRootDescriptorTable(
+        3,
+        rawSRV);
+
+    const auto previousSRV =
+        m_RendererCore->
+        GetSSGIPreviousSRVHandleFromGBufferHeap();
+
+    commandList->SetComputeRootDescriptorTable(
+        4,
+        previousSRV);
+
+    const auto filteredUAV =
+        m_RendererCore->
+        GetSSGIFilteredUAVHandleFromGBufferHeap();
+
+    commandList->SetComputeRootDescriptorTable(
+        5,
+        filteredUAV);
 
     // Dispatch compute shader (8x8 thread groups)
     uint32_t width = m_RendererCore->GetWidth();
@@ -1480,47 +1498,28 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     uint32_t dispatchX = (width + 7) / 8;
     uint32_t dispatchY = (height + 7) / 8;
     commandList->Dispatch(dispatchX, dispatchY, 1);
-
-    // SSGI 버퍼를 pixel shader resource 상태로 전환 (Lighting 패스에서 사용)
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    commandList->ResourceBarrier(1, &barrier);
 }
 
 void RenderSystem::CopySSGIToPrevious(UINT frameIndex) {
-    auto commandList = m_RendererCore->GetCommandList();
-    
-    // 현재 SSGI 버퍼를 COPY_SOURCE 상태로 전환
-    D3D12_RESOURCE_BARRIER barriers[2] = {};
-    barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[0].Transition.pResource = m_RendererCore->GetSSGIBuffer();
-    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    barriers[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    
-    // 이전 프레임 SSGI 버퍼를 COPY_DEST 상태로 전환
-    barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barriers[1].Transition.pResource = m_RendererCore->GetSSGIPreviousBuffer();
-    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
-    barriers[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    
-    commandList->ResourceBarrier(2, barriers);
-    
-    // 텍스처 복사
+    auto commandList =
+        m_RendererCore->GetCommandList();
+
+    auto& commandContext =
+        m_RendererCore->GetCommandContext();
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetSSGIFilteredTexture(),
+        D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+    commandContext.TransitionResource(
+        m_RendererCore->GetSSGIPreviousTexture(),
+        D3D12_RESOURCE_STATE_COPY_DEST);
+
+    commandContext.FlushResourceBarriers();
+
     commandList->CopyResource(
-        m_RendererCore->GetSSGIPreviousBuffer(),
-        m_RendererCore->GetSSGIBuffer()
-    );
-    
-    // 상태를 원래대로 복원
-    barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-    barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    
-    barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-    barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    
-    commandList->ResourceBarrier(2, barriers);
+        m_RendererCore->GetSSGIPrevious(),
+        m_RendererCore->GetSSGIFiltered());
 }
 
 void RenderSystem::UpdatePassConstants(UINT frameIndex) {
@@ -1750,19 +1749,36 @@ void RenderSystem::RenderEntity(Entity* entity, UINT frameIndex, int objectIndex
     commandList->SetDescriptorHeaps(1, srvHeaps);
     
     // 텍스처 SRV 바인딩
-    // GBuffer SRV 힙의 시작은 인덱스 8부터 (0-7은 G-Buffer, SSGI, Shadow용)
     D3D12_GPU_DESCRIPTOR_HANDLE baseHandle = m_RendererCore->GetGBufferSRVHeap()->GetGPUDescriptorHandleForHeapStart();
     UINT descriptorSize = m_RendererCore->GetGBufferSRVDescriptorSize();
     
-    // 알비도 텍스처 핸들 계산 (root parameter 4)
-    D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle = baseHandle;
-    albedoHandle.ptr += (8 + albedoTexture->SRVIndex) * descriptorSize;
-    commandList->SetGraphicsRootDescriptorTable(4, albedoHandle);
-    
-    // 노말맵 텍스처 핸들 계산 (root parameter 5)
-    D3D12_GPU_DESCRIPTOR_HANDLE normalHandle = baseHandle;
-    normalHandle.ptr += (8 + normalTexture->SRVIndex) * descriptorSize;
-    commandList->SetGraphicsRootDescriptorTable(5, normalHandle);
+    const UINT textureStartIndex =
+        m_RendererCore->
+        GetTextureSRVStartIndex();
+
+    D3D12_GPU_DESCRIPTOR_HANDLE albedoHandle =
+        baseHandle;
+
+    albedoHandle.ptr +=
+        (textureStartIndex +
+            albedoTexture->SRVIndex) *
+        descriptorSize;
+
+    commandList->SetGraphicsRootDescriptorTable(
+        4,
+        albedoHandle);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE normalHandle =
+        baseHandle;
+
+    normalHandle.ptr +=
+        (textureStartIndex +
+            normalTexture->SRVIndex) *
+        descriptorSize;
+
+    commandList->SetGraphicsRootDescriptorTable(
+        5,
+        normalHandle);
 
     // 메시 렌더링
     commandList->IASetVertexBuffers(0, 1, &mesh->vertexBufferView);

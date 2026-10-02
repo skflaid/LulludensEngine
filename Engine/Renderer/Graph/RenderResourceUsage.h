@@ -10,7 +10,8 @@ enum class RenderResource
     GBufferMaterial,
     SceneDepth,
 
-    SSGICurrent,
+    SSGIRaw,
+    SSGIFiltered,
     SSGIPrevious,
 
     BackBuffer

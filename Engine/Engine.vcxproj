@@ -196,7 +196,7 @@
     <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Physics\Systems\CollisionSystem.cpp" />
     <ClCompile Include="Physics\Systems\DynamicsSystem.cpp" />
-    <ClCompile Include="Renderer\Commands\소스.cpp" />
+    <ClCompile Include="Renderer\Commands\CommandContext.cpp" />
     <ClCompile Include="Renderer\Components\MeshComponent.cpp" />
     <ClCompile Include="Renderer\RendererCore.cpp" />
     <ClCompile Include="Renderer\Systems\AnimationSystem.cpp" />

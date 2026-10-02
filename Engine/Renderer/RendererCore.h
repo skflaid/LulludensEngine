@@ -71,16 +71,52 @@ public:
     }
 
     // SSGI access
-    ID3D12Resource* GetSSGIBuffer() const { return m_SSGIBuffer.Get(); }
-    ID3D12Resource* GetSSGIPreviousBuffer() const { return m_SSGIPreviousBuffer.Get(); }
-    ID3D12DescriptorHeap* GetSSGIRTVHeap() const { return m_SSGIRTVHeap.Get(); }
-    ID3D12DescriptorHeap* GetSSGISRVHeap() const { return m_SSGISRVHeap.Get(); }
-    D3D12_CPU_DESCRIPTOR_HANDLE GetSSGIRTVHandle() const;
-    D3D12_CPU_DESCRIPTOR_HANDLE GetSSGISRVHandle() const;
-    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandle() const;
-    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGISRVHandleFromGBufferHeap() const;
-    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIUAVHandleFromGBufferHeap() const;
-    D3D12_GPU_DESCRIPTOR_HANDLE GetSSGIPreviousSRVHandleFromGBufferHeap() const;
+    ID3D12Resource* GetSSGIRaw() const noexcept
+    {
+        return m_SSGIRaw.Get();
+    }
+
+    ID3D12Resource* GetSSGIFiltered() const noexcept
+    {
+        return m_SSGIFiltered.Get();
+    }
+
+    ID3D12Resource* GetSSGIPrevious() const noexcept
+    {
+        return m_SSGIPrevious.Get();
+    }
+
+    GpuTexture& GetSSGIRawTexture() noexcept
+    {
+        return m_SSGIRaw;
+    }
+
+    GpuTexture& GetSSGIFilteredTexture() noexcept
+    {
+        return m_SSGIFiltered;
+    }
+
+    GpuTexture& GetSSGIPreviousTexture() noexcept
+    {
+        return m_SSGIPrevious;
+    }
+
+    D3D12_GPU_DESCRIPTOR_HANDLE
+        GetSSGIRawSRVHandleFromGBufferHeap() const;
+
+    D3D12_GPU_DESCRIPTOR_HANDLE
+        GetSSGIRawUAVHandleFromGBufferHeap() const;
+
+    D3D12_GPU_DESCRIPTOR_HANDLE
+        GetSSGIFilteredUAVHandleFromGBufferHeap() const;
+
+    D3D12_GPU_DESCRIPTOR_HANDLE
+        GetSSGIPreviousSRVHandleFromGBufferHeap() const;
+
+    static constexpr UINT GetTextureSRVStartIndex() noexcept
+    {
+        return 10;
+    }
 
 private:
     void CreateDevice();
@@ -127,12 +163,9 @@ private:
     uint32_t m_GBufferSRVDescriptorSize;
 
     // SSGI
-    ComPtr<ID3D12Resource> m_SSGIBuffer;
-    ComPtr<ID3D12Resource> m_SSGIPreviousBuffer;  // 이전 프레임 SSGI Output
-    ComPtr<ID3D12DescriptorHeap> m_SSGIRTVHeap;
-    ComPtr<ID3D12DescriptorHeap> m_SSGISRVHeap;
-    uint32_t m_SSGIRTVDescriptorSize;
-    uint32_t m_SSGISRVDescriptorSize;
+    GpuTexture m_SSGIRaw;
+    GpuTexture m_SSGIFiltered;
+    GpuTexture m_SSGIPrevious;
 
     // Synchronization objects
     ComPtr<ID3D12Fence> m_Fence;
