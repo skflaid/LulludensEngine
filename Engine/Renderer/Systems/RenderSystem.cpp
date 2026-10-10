@@ -1151,6 +1151,7 @@ void RenderSystem::Render() {
 
     UINT frameIndex = m_RendererCore->GetFrameIndex();
     UpdatePassConstants(frameIndex);
+    UpdateSSGITemporalConstants(frameIndex);
 
     RenderPassContext context{};
     context.frameIndex = frameIndex;
