@@ -1162,6 +1162,8 @@ void RenderSystem::Render() {
         if (!pass)
             continue;
 
+        PreparePassResources(*pass);
+        
         pass->Execute(context);
     }
 
@@ -1206,14 +1208,14 @@ void RenderSystem::RenderShadowPass(UINT frameIndex) {
     commandList->RSSetScissorRects(1, &m_ShadowScissorRect);
 
     // Shadow map을 DEPTH_WRITE 상태로
-    auto& commandContext =
+    /*auto& commandContext =
         m_RendererCore->GetCommandContext();
 
     commandContext.TransitionResource(
         m_ShadowMap,
         D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
-    commandContext.FlushResourceBarriers();
+    commandContext.FlushResourceBarriers();*/
 
     // 깊이만 클리어
     commandList->ClearDepthStencilView(m_ShadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
@@ -1257,7 +1259,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
     commandList->RSSetViewports(1, &mainViewport);
     commandList->RSSetScissorRects(1, &mainScissor);
 
-    auto& commandContext =
+    /*auto& commandContext =
         m_RendererCore->GetCommandContext();
 
     commandContext.TransitionResource(
@@ -1276,7 +1278,7 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
         m_RendererCore->GetGBufferMaterialTexture(),
         D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-    commandContext.FlushResourceBarriers();
+    commandContext.FlushResourceBarriers();*/
 
     // Set G-Buffer render targets
     D3D12_CPU_DESCRIPTOR_HANDLE gbufferRTVs[4] = {
@@ -1314,10 +1316,9 @@ void RenderSystem::RenderGBufferPass(UINT frameIndex) {
 
 void RenderSystem::RenderLightingPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
-    auto device = m_RendererCore->GetDevice();
 
     // 리소스 상태 전이
-    auto& commandContext =
+    /*auto& commandContext =
         m_RendererCore->GetCommandContext();
 
     commandContext.TransitionResource(
@@ -1344,7 +1345,7 @@ void RenderSystem::RenderLightingPass(UINT frameIndex) {
         m_ShadowMap,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-    commandContext.FlushResourceBarriers();
+    commandContext.FlushResourceBarriers();*/
 
     // Get back buffer resource (we need to access it through RendererCore)
     // For now, we'll get it from the RTV heap - but we need the actual resource
@@ -1405,10 +1406,9 @@ void RenderSystem::ToggleRenderMode() {
 
 void RenderSystem::RenderSSGIPass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
-    auto device = m_RendererCore->GetDevice();;
 
     // G-Buffer Resource Transition
-    auto& commandContext =
+   /* auto& commandContext =
         m_RendererCore->GetCommandContext();
 
     commandContext.TransitionResource(
@@ -1431,7 +1431,7 @@ void RenderSystem::RenderSSGIPass(UINT frameIndex) {
         m_RendererCore->GetSSGIRawTexture(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    commandContext.FlushResourceBarriers();
+    commandContext.FlushResourceBarriers();*/
 
     // Set pipeline state
     commandList->SetPipelineState(m_SSGIPipelineState.Get());
@@ -1474,7 +1474,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
     auto commandList = m_RendererCore->GetCommandList();
     auto device = m_RendererCore->GetDevice();
 
-    auto& commandContext =
+    /*auto& commandContext =
         m_RendererCore->GetCommandContext();
 
     commandContext.TransitionResource(
@@ -1489,7 +1489,7 @@ void RenderSystem::RenderSSGIDenoisePass(UINT frameIndex) {
         m_RendererCore->GetSSGIPreviousTexture(),
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-    commandContext.FlushResourceBarriers();
+    commandContext.FlushResourceBarriers();*/
 
     // Set pipeline state
     commandList->SetPipelineState(m_SSGIDenoisePipelineState.Get());
@@ -1917,4 +1917,107 @@ void RenderSystem::CommitSSGIHistory()
         m_CurrentViewProjection;
 
     m_SSGIHistoryValid = true;
+}
+
+D3D12_RESOURCE_STATES RenderSystem::ToD3D12State(RenderResourceUsage usage)
+{
+    switch (usage)
+    {
+    case RenderResourceUsage::ShaderReadPixel:
+        return D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+    case RenderResourceUsage::ShaderReadCompute:
+        return D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
+    case RenderResourceUsage::RenderTarget:
+        return D3D12_RESOURCE_STATE_RENDER_TARGET;
+
+    case RenderResourceUsage::DepthWrite:
+        return D3D12_RESOURCE_STATE_DEPTH_WRITE;
+
+    case RenderResourceUsage::DepthRead:
+        return D3D12_RESOURCE_STATE_DEPTH_READ;
+
+    case RenderResourceUsage::UnorderedAccess:
+        return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+
+    case RenderResourceUsage::CopySource:
+        return D3D12_RESOURCE_STATE_COPY_SOURCE;
+
+    case RenderResourceUsage::CopyDestination:
+        return D3D12_RESOURCE_STATE_COPY_DEST;
+
+    case RenderResourceUsage::Present:
+        return D3D12_RESOURCE_STATE_PRESENT;
+    }
+
+    assert(false && "Unknown RenderResourceUsage");
+    return D3D12_RESOURCE_STATE_COMMON;
+}
+
+GpuResource* RenderSystem::ResolveResource(
+    RenderResource resource) noexcept
+{
+    switch (resource)
+    {
+    case RenderResource::ShadowMap:
+        return &m_ShadowMap;
+
+        // ID3D12Resource* 를 가져오지 않고 GpuTexture를 가져와서 Resource의 State를 확인하기 위함.
+    case RenderResource::GBufferPosition:
+        return &m_RendererCore->GetGBufferPositionTexture();
+        
+    case RenderResource::GBufferNormal:
+        return &m_RendererCore->GetGBufferNormalTexture();
+
+    case RenderResource::GBufferAlbedo:
+        return &m_RendererCore->GetGBufferAlbedoTexture();
+
+    case RenderResource::GBufferMaterial:
+        return &m_RendererCore->GetGBufferMaterialTexture();
+
+    case RenderResource::SSGIRaw:
+        return &m_RendererCore->GetSSGIRawTexture();
+
+    case RenderResource::SSGIFiltered:
+        return &m_RendererCore->GetSSGIFilteredTexture();
+
+    case RenderResource::SSGIPrevious:
+        return &m_RendererCore->GetSSGIPreviousTexture();
+
+    case RenderResource::SceneDepth:
+    case RenderResource::BackBuffer:
+        return nullptr;
+    }
+
+    assert(false && "Unknown RenderResource");
+    return nullptr;
+}
+
+void RenderSystem::PreparePassResources(const IRenderPass& pass)
+{
+    auto& commandContext = m_RendererCore->GetCommandContext();
+
+    for (const ResourceUsage& usage : pass.GetResourceUsages())
+    {
+        GpuResource* resource = ResolveResource(usage.resource);
+
+        if (resource == nullptr)
+        {
+            const bool externallyManaged =
+                usage.resource == RenderResource::SceneDepth ||
+                usage.resource == RenderResource::BackBuffer;
+
+            assert(
+                externallyManaged && "Declared resource is not registered");
+
+            continue;
+        }
+
+        const D3D12_RESOURCE_STATES requiredState = ToD3D12State(usage.usage);
+
+        commandContext.TransitionResource(*resource, requiredState);
+    }
+
+    commandContext.FlushResourceBarriers();
 }

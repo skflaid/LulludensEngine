@@ -57,6 +57,12 @@ private:
     // 
     void BuildRenderPasses();
 
+    // 상태 전환
+    static D3D12_RESOURCE_STATES ToD3D12State(RenderResourceUsage usage);
+    GpuResource* ResolveResource(RenderResource resource) noexcept;
+    // 패스가 선언한 리소스 요구사항을 실제 GPU 상태로 준비
+    void PreparePassResources(const IRenderPass& pass);
+
     void RenderGBufferPass(UINT frameIndex);
     void RenderLightingPass(UINT frameIndex);
     void RenderSSGIPass(UINT frameIndex);
